@@ -12,7 +12,8 @@ let state = {
     currentBinary: "00000000",
     nextPulse: false,
     queue: [],
-    lastMessage: ""
+    lastMessage: "",
+    isResetting: false
 };
 
 const charToBinary = (char) => {
@@ -25,6 +26,12 @@ app.get('/gemini/read', (req, res) => {
         const nextChar = state.queue.shift();
         state.currentBinary = charToBinary(nextChar);
         state.nextPulse = true;
+        state.isResetting = true; // Set flag to trigger reset when empty
+    } else if (state.isResetting) {
+        // Queue just finished, send a final 0 to reset the display
+        state.currentBinary = "00000000";
+        state.nextPulse = false;
+        state.isResetting = false; 
     } else {
         state.nextPulse = false;
     }
@@ -47,6 +54,7 @@ app.post('/api/type', (req, res) => {
 
     state.lastMessage = message;
     state.queue = message.split("");
+    state.isResetting = true;
     
     console.log("Queued message:", message);
     res.json({ success: true, queued: message.length });
