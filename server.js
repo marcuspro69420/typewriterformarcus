@@ -9,8 +9,9 @@ const ADMIN_PASSWORD = "197312";
 const apiKey = "AIzaSyDF5CSGJVA0ys7rjMZOQB4r1CIijviUYLE"; 
 const genAI = new GoogleGenerativeAI(apiKey);
 
+// FIXED: Updated model string to avoid the v1 404 error
 const model = genAI.getGenerativeModel({ 
-    model: "gemini-1.5-flash",
+    model: "gemini-1.5-flash-latest",
     systemInstruction: "You are Gebidi, an unhinged AI for a Roblox Build Logic server. Your output MUST be under 16 characters. Be blunt and short."
 });
 
@@ -43,7 +44,7 @@ app.post('/gemini/api/chat', async (req, res) => {
     
     // Security Check
     if (password !== ADMIN_PASSWORD) {
-        return res.status(403).send("WRONG PASSWORD. MARCUS IS SLEEPING.");
+        return res.status(403).send("GET OUT OF MY SITE AISULTAN OR INTENS IM SLEEPING");
     }
 
     if (!prompt) return res.status(400).send("Empty prompt");
