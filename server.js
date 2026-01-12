@@ -23,7 +23,11 @@ const getBinary = (char, pulse) => {
 
 // READ: Hits this every time the Transmitter pings
 app.get('/gemini/read', (req, res) => {
-    let charToSend = " "; // Default to space if idle
+    // If the queue is empty and we aren't currently in the middle of a pulse,
+    // FORCE reset to all zeros so it doesn't loop the last character.
+    if (state.queue.length === 0 && !state.isPulsing) {
+        state.currentBinary = "00000000";
+    }
     
     if (state.queue.length > 0 && !state.isPulsing) {
         const nextChar = state.queue.shift();
@@ -33,8 +37,9 @@ app.get('/gemini/read', (req, res) => {
         state.currentBinary = getBinary(nextChar, true);
 
         // Step 2: Auto-reset the pulse bit to 0 after exactly 0.05 seconds
+        // Also resets the character bits to 0 to prevent "ghosting" or looping
         setTimeout(() => {
-            state.currentBinary = getBinary(nextChar, false);
+            state.currentBinary = "00000000"; 
             state.isPulsing = false;
         }, 50); 
     }
