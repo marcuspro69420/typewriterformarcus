@@ -24,28 +24,38 @@ const getBinary = (char, pulse) => {
 
 // READ: Hits this every time the Transmitter pings
 app.get('/gemini/read', (req, res) => {
-    // Force reset to all zeros if idle to prevent looping/ghosting
-    if (state.queue.length === 0 && !state.isPulsing) {
-        state.currentBinary = "00000000";
+    // If we are currently in the middle of a 10ms pulse, return the active state
+    if (state.isPulsing) {
+        return res.json({
+            "value": state.currentBinary,
+            "next": true
+        });
     }
-    
-    if (state.queue.length > 0 && !state.isPulsing) {
+
+    // If there is something in the queue, start a new pulse
+    if (state.queue.length > 0) {
         const nextChar = state.queue.shift();
         state.isPulsing = true;
         
-        // Step 1: Set the binary with the 8th bit HIGH
+        // Immediate set to Letter + Pulse High
         state.currentBinary = getBinary(nextChar, true);
 
-        // Step 2: Auto-reset to 00000000 after 0.01 seconds
+        // Crucial: Clear EVERYTHING to 0 after 10ms
         setTimeout(() => {
             state.currentBinary = "00000000"; 
             state.isPulsing = false;
         }, 10); 
+
+        return res.json({
+            "value": state.currentBinary,
+            "next": true
+        });
     }
 
+    // Otherwise, dead silence (00000000)
     res.json({
-        "value": state.currentBinary,
-        "next": state.currentBinary.endsWith("1")
+        "value": "00000000",
+        "next": false
     });
 });
 
@@ -54,7 +64,7 @@ app.post('/api/type', (req, res) => {
     const { message, password } = req.body;
     
     if (password !== ADMIN_PASSWORD) {
-        return res.status(403).json({ error: "WRONG PASSWORD. MARCUS IS SLEEPING." });
+        return res.status(403).json({ error: "WRONG PASSWORD." });
     }
 
     if (!message) return res.status(400).json({ error: "Empty message" });
@@ -79,47 +89,37 @@ app.get('/gemini/edit', (req, res) => {
                 body { background: #050505; color: #00ff41; font-family: monospace; padding: 20px; display: flex; justify-content: center; }
                 .container { border: 1px solid #00ff41; padding: 20px; width: 100%; max-width: 500px; box-shadow: 0 0 15px #00ff41; }
                 input { background: #111; color: #00ff41; border: 1px solid #00ff41; padding: 12px; width: 100%; box-sizing: border-box; margin-bottom: 10px; font-size: 16px; }
-                button { background: #00ff41; color: #000; border: none; padding: 12px; width: 100%; cursor: pointer; font-weight: bold; font-size: 16px; transition: 0.2s; }
-                button:active { background: #008f25; }
+                button { background: #00ff41; color: #000; border: none; padding: 12px; width: 100%; cursor: pointer; font-weight: bold; font-size: 16px; }
                 .status-box { background: #111; padding: 10px; border-left: 3px solid cyan; margin: 15px 0; min-height: 40px; }
-                h1 { margin-top: 0; font-size: 1.5rem; text-align: center; }
             </style>
         </head>
         <body>
             <div class="container">
                 <h1>GEBIDI TYPEWRITER</h1>
-                <input type="password" id="pass" placeholder="ENTER ADMIN PASS">
-                <input type="text" id="msg" placeholder="Type message to Roblox..." autofocus>
-                <button onclick="sendMsg()">SEND TO DISPLAY</button>
+                <input type="password" id="pass" placeholder="PASSWORD">
+                <input type="text" id="msg" placeholder="Type here..." autofocus>
+                <button onclick="sendMsg()">SEND</button>
                 <div class="status-box" id="status">Ready.</div>
             </div>
             <script>
+                const savedPass = localStorage.getItem('gebidi_pass');
+                if (savedPass) document.getElementById('pass').value = savedPass;
+
                 async function sendMsg() {
                     const pass = document.getElementById('pass').value;
                     const msg = document.getElementById('msg').value;
-                    const status = document.getElementById('status');
-                    status.innerText = "Sending...";
+                    localStorage.setItem('gebidi_pass', pass);
                     try {
-                        const response = await fetch('/api/type', {
+                        await fetch('/api/type', {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({ message: msg, password: pass })
                         });
-                        const data = await response.json();
-                        if (data.success) {
-                            status.innerText = "Queued: " + msg;
-                            document.getElementById('msg').value = "";
-                            document.getElementById('msg').focus();
-                        } else {
-                            status.innerText = "ERROR: " + data.error;
-                        }
-                    } catch (e) {
-                        status.innerText = "Connection Error.";
-                    }
+                        document.getElementById('msg').value = "";
+                        document.getElementById('status').innerText = "Sent: " + msg;
+                    } catch (e) { console.error(e); }
                 }
-                document.getElementById('msg').addEventListener('keypress', (e) => {
-                    if (e.key === 'Enter') sendMsg();
-                });
+                document.getElementById('msg').addEventListener('keypress', (e) => { if (e.key === 'Enter') sendMsg(); });
             </script>
         </body>
         </html>
@@ -127,4 +127,4 @@ app.get('/gemini/edit', (req, res) => {
 });
 
 app.get('/', (req, res) => res.redirect('/gemini/edit'));
-app.listen(PORT, '0.0.0.0', () => console.log("TYPEWRITER ONLINE"));
+app.listen(PORT, '0.0.0.0');
