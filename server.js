@@ -10,35 +10,38 @@ app.use(express.urlencoded({ extended: true }));
 
 let state = {
     currentBinary: "00000000",
-    nextPulse: false,
     queue: [],
     lastMessage: "",
-    isResetting: false
+    isPulsing: false
 };
 
-const charToBinary = (char) => {
-    return char.charCodeAt(0).toString(2).padStart(8, '0');
+// Fixed: 7-bit ASCII for Pins 1-7, 8th bit is the Next Pulse
+const getBinary = (char, pulse) => {
+    const bin = char.charCodeAt(0).toString(2).padStart(7, '0');
+    return bin + (pulse ? "1" : "0");
 };
 
-// READ: Hits this every 0.5s from Roblox
+// READ: Hits this every time the Transmitter pings
 app.get('/gemini/read', (req, res) => {
-    if (state.queue.length > 0) {
+    let charToSend = " "; // Default to space if idle
+    
+    if (state.queue.length > 0 && !state.isPulsing) {
         const nextChar = state.queue.shift();
-        state.currentBinary = charToBinary(nextChar);
-        state.nextPulse = true;
-        state.isResetting = true; // Set flag to trigger reset when empty
-    } else if (state.isResetting) {
-        // Queue just finished, send a final 0 to reset the display
-        state.currentBinary = "00000000";
-        state.nextPulse = false;
-        state.isResetting = false; 
-    } else {
-        state.nextPulse = false;
+        state.isPulsing = true;
+        
+        // Step 1: Set the binary with the 8th bit HIGH
+        state.currentBinary = getBinary(nextChar, true);
+
+        // Step 2: Auto-reset the pulse bit to 0 after exactly 0.05 seconds
+        setTimeout(() => {
+            state.currentBinary = getBinary(nextChar, false);
+            state.isPulsing = false;
+        }, 50); 
     }
 
     res.json({
         "value": state.currentBinary,
-        "next": state.nextPulse
+        "next": state.currentBinary.endsWith("1")
     });
 });
 
@@ -54,7 +57,7 @@ app.post('/api/type', (req, res) => {
 
     state.lastMessage = message;
     state.queue = message.split("");
-    state.isResetting = true;
+    state.isPulsing = false;
     
     console.log("Queued message:", message);
     res.json({ success: true, queued: message.length });
@@ -108,7 +111,7 @@ app.get('/gemini/edit', (req, res) => {
                         
                         if (data.success) {
                             status.innerText = "Queued: " + msg;
-                            document.getElementById('msg').value = ""; // Clear message box
+                            document.getElementById('msg').value = "";
                             document.getElementById('msg').focus();
                         } else {
                             status.innerText = "ERROR: " + data.error;
@@ -118,7 +121,6 @@ app.get('/gemini/edit', (req, res) => {
                     }
                 }
 
-                // Press Enter to send
                 document.getElementById('msg').addEventListener('keypress', (e) => {
                     if (e.key === 'Enter') sendMsg();
                 });
