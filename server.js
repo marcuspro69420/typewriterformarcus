@@ -15,16 +15,16 @@ let state = {
     isPulsing: false
 };
 
-// Fixed: 7-bit ASCII for Pins 1-7, 8th bit is the Next Pulse
+// Standard 7-bit ASCII for Pins 1-7, 8th bit is the Next Pulse
 const getBinary = (char, pulse) => {
-    const bin = char.charCodeAt(0).toString(2).padStart(7, '0');
+    const charCode = char.charCodeAt(0);
+    const bin = charCode.toString(2).padStart(7, '0');
     return bin + (pulse ? "1" : "0");
 };
 
 // READ: Hits this every time the Transmitter pings
 app.get('/gemini/read', (req, res) => {
-    // If the queue is empty and we aren't currently in the middle of a pulse,
-    // FORCE reset to all zeros so it doesn't loop the last character.
+    // Force reset to all zeros if idle to prevent looping/ghosting
     if (state.queue.length === 0 && !state.isPulsing) {
         state.currentBinary = "00000000";
     }
@@ -36,12 +36,11 @@ app.get('/gemini/read', (req, res) => {
         // Step 1: Set the binary with the 8th bit HIGH
         state.currentBinary = getBinary(nextChar, true);
 
-        // Step 2: Auto-reset the pulse bit to 0 after exactly 0.05 seconds
-        // Also resets the character bits to 0 to prevent "ghosting" or looping
+        // Step 2: Auto-reset to 00000000 after 0.01 seconds
         setTimeout(() => {
             state.currentBinary = "00000000"; 
             state.isPulsing = false;
-        }, 50); 
+        }, 10); 
     }
 
     res.json({
@@ -89,31 +88,24 @@ app.get('/gemini/edit', (req, res) => {
         <body>
             <div class="container">
                 <h1>GEBIDI TYPEWRITER</h1>
-                
                 <input type="password" id="pass" placeholder="ENTER ADMIN PASS">
                 <input type="text" id="msg" placeholder="Type message to Roblox..." autofocus>
                 <button onclick="sendMsg()">SEND TO DISPLAY</button>
-
                 <div class="status-box" id="status">Ready.</div>
             </div>
-
             <script>
                 async function sendMsg() {
                     const pass = document.getElementById('pass').value;
                     const msg = document.getElementById('msg').value;
                     const status = document.getElementById('status');
-
                     status.innerText = "Sending...";
-
                     try {
                         const response = await fetch('/api/type', {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({ message: msg, password: pass })
                         });
-                        
                         const data = await response.json();
-                        
                         if (data.success) {
                             status.innerText = "Queued: " + msg;
                             document.getElementById('msg').value = "";
@@ -125,7 +117,6 @@ app.get('/gemini/edit', (req, res) => {
                         status.innerText = "Connection Error.";
                     }
                 }
-
                 document.getElementById('msg').addEventListener('keypress', (e) => {
                     if (e.key === 'Enter') sendMsg();
                 });
