@@ -15,36 +15,45 @@ let state = {
     isPulsing: false
 };
 
-// Standard 7-bit ASCII for Pins 1-7, 8th bit is the Next Pulse
+/**
+ * getBinary logic:
+ * 'A' charCode is 65. 
+ * toString(2) makes it "1000001".
+ * padStart(7, '0') makes it "1000001".
+ * Output is 7 bits + Pulse Bit (Pin 8).
+ */
 const getBinary = (char, pulse) => {
     const charCode = char.charCodeAt(0);
-    const bin = charCode.toString(2).padStart(7, '0');
+    // Standard 7-bit ASCII
+    let bin = charCode.toString(2).padStart(7, '0');
+    
+    // The pulse bit (Pin 8) is added at the end
     return bin + (pulse ? "1" : "0");
 };
 
 // READ: Hits this every time the Transmitter pings
 app.get('/gemini/read', (req, res) => {
-    // If we are currently in the middle of a 10ms pulse, return the active state
+    // If we just finished a pulse, send a reset (00000000) to clear the line
     if (state.isPulsing) {
+        state.isPulsing = false;
+        state.currentBinary = "00000000";
         return res.json({
-            "value": state.currentBinary,
-            "next": true
+            "value": "00000000",
+            "next": false
         });
     }
 
-    // If there is something in the queue, start a new pulse
+    // If there is a new letter in the queue, send it and set the pulse flag
     if (state.queue.length > 0) {
         const nextChar = state.queue.shift();
         state.isPulsing = true;
-        
-        // Immediate set to Letter + Pulse High
         state.currentBinary = getBinary(nextChar, true);
 
-        // Crucial: Clear EVERYTHING to 0 after 10ms
+        // Instant reset trigger (0.01ms)
         setTimeout(() => {
-            state.currentBinary = "00000000"; 
+            state.currentBinary = "00000000";
             state.isPulsing = false;
-        }, 10); 
+        }, 0.01);
 
         return res.json({
             "value": state.currentBinary,
@@ -52,7 +61,8 @@ app.get('/gemini/read', (req, res) => {
         });
     }
 
-    // Otherwise, dead silence (00000000)
+    // Default idle state
+    state.currentBinary = "00000000";
     res.json({
         "value": "00000000",
         "next": false
