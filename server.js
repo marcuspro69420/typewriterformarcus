@@ -11,8 +11,8 @@ app.use(express.urlencoded({ extended: true }));
 let state = {
     currentBinary: "00000000",
     queue: [],
-    isPulsing: false,
-    needsReset: false
+    lastSentChar: null,
+    isWaitingForReset: false
 };
 
 /**
@@ -34,47 +34,32 @@ const getBinary = (char, pulse) => {
         shift = "0";
         val = charCode - 96;
     } else if (charCode >= 48 && charCode <= 57) { // Numbers 0-9
-        val = charCode + 4; // Mapping per wiki offset
+        val = charCode + 4; 
     } else if (char === " ") {
         val = 0;
     }
 
-    // Convert value to 6 bits (Bits 1-6)
     const charBits = val.toString(2).padStart(6, '0');
-    
-    // Construct final string: [Bit 8 (Pulse)][Bit 7 (Shift)][Bits 6-1 (Value)]
     const nextBit = pulse ? "1" : "0";
     
-    // Result: [Next][Shift][CharBits...]
     return nextBit + shift + charBits;
 };
 
 // READ: The Roblox Transmitter hits this
 app.get('/typewriter/read', (req, res) => {
-    // FORCE RESET: If the previous request was a character, this one MUST be zero
-    if (state.needsReset) {
-        state.needsReset = false;
-        state.isPulsing = false;
-        state.currentBinary = "00000000";
+    // If the last request was a letter, we MUST return 0 now to finish the pulse
+    if (state.isWaitingForReset) {
+        state.isWaitingForReset = false;
         return res.json({ "value": "00000000", "next": false });
     }
 
-    // Process queue
-    if (state.queue.length > 0 && !state.isPulsing) {
+    // If there's a letter in the queue, send it and mark that we need a reset next
+    if (state.queue.length > 0) {
         const nextChar = state.queue.shift();
-        state.isPulsing = true;
-        state.needsReset = true; // Mark that the NEXT request needs to be 0
+        state.isWaitingForReset = true; // Next request will be forced to 0
         
-        state.currentBinary = getBinary(nextChar, true);
-
-        // Hold the state for 0.5s just in case, but the logic above will kill it on the next ping
-        setTimeout(() => {
-            state.currentBinary = "00000000";
-            state.isPulsing = false;
-            state.needsReset = false;
-        }, 500);
-
-        return res.json({ "value": state.currentBinary, "next": true });
+        const binary = getBinary(nextChar, true);
+        return res.json({ "value": binary, "next": true });
     }
 
     // Default idle
@@ -136,8 +121,7 @@ app.get('/typewriter/edit', (req, res) => {
 app.post('/typewriter/api/type', (req, res) => {
     if (req.body.password !== ADMIN_PASSWORD) return res.status(403).send("NO");
     state.queue = req.body.message.split("");
-    state.isPulsing = false;
-    state.needsReset = false;
+    state.isWaitingForReset = false;
     res.json({ success: true });
 });
 
