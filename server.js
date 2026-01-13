@@ -57,18 +57,15 @@ const getBinary = (char, pulse) => {
 
 // READ: The Roblox Transmitter hits this
 app.get('/typewriter/read', (req, res) => {
-    // If we are currently in the middle of a 0.1s pulse gap, return zeros
     if (state.isPulsing) {
         return res.json({ "value": "00000000", "next": false });
     }
 
-    // If there's a letter, send it and start a very short cooldown
     if (state.queue.length > 0) {
         const nextChar = state.queue.shift();
         const binary = getBinary(nextChar, true);
         
         state.isPulsing = true;
-        // Short cooldown to ensure the pulse is "clean" but fast
         setTimeout(() => {
             state.isPulsing = false;
         }, 150); 
@@ -76,7 +73,6 @@ app.get('/typewriter/read', (req, res) => {
         return res.json({ "value": binary, "next": true });
     }
 
-    // Default idle
     res.json({ "value": "00000000", "next": false });
 });
 
@@ -112,7 +108,6 @@ app.get('/typewriter/edit', (req, res) => {
                 async function send() {
                     const p = document.getElementById('pass').value;
                     const m = document.getElementById('msg').value;
-                    localStorage.setItem('tp_pass', p);
                     
                     const res = await fetch('/typewriter/api/type', {
                         method: 'POST',
@@ -120,7 +115,13 @@ app.get('/typewriter/edit', (req, res) => {
                         body: JSON.stringify({ message: m, password: p })
                     });
                     
+                    if (res.status === 302 || res.status === 403) {
+                        window.location.href = "https://www.youtube.com/watch?v=dQw4w9WgXcQ";
+                        return;
+                    }
+
                     if (res.ok) {
+                        localStorage.setItem('tp_pass', p);
                         document.getElementById('msg').value = "";
                         document.getElementById('stat').innerText = "TRANSMITTING: " + m;
                     }
@@ -133,8 +134,12 @@ app.get('/typewriter/edit', (req, res) => {
 });
 
 app.post('/typewriter/api/type', (req, res) => {
-    if (req.body.password !== ADMIN_PASSWORD) return res.status(403).send("NO");
-    state.queue = req.body.message.split("");
+    const { message, password } = req.body;
+    if (!password || password !== ADMIN_PASSWORD) {
+        // We return 403 which the frontend script now catches to redirect to Rickroll
+        return res.status(403).json({ redirect: true });
+    }
+    state.queue = message.split("");
     state.isPulsing = false;
     res.json({ success: true });
 });
