@@ -3,7 +3,7 @@ const app = express();
 const PORT = process.env.PORT || 10000;
 
 // YOUR PASSWORD
-const ADMIN_PASSWORD = "197312"; 
+const ADMIN_PASSWORD = "2015"; 
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
@@ -12,14 +12,15 @@ let state = {
     currentBinary: "00000000",
     queue: [],
     lastSentChar: null,
-    isWaitingForReset: false
+    isWaitingForReset: false,
+    shouldResetBoard: false // New flag for the "Received POST" trigger
 };
 
 /**
  * BUILD LOGIC WIKI MAPPING (Right to Left):
  * Bits 1-6: Character (0-63)
  * Bit 7: Shift (0 = Lower, 1 = Upper)
- * Bit 8: Next Pulse
+ * Bit 8: Next Pulse / Reset Pulse
  */
 const getBinary = (char, pulse) => {
     let charCode = char.charCodeAt(0);
@@ -37,6 +38,19 @@ const getBinary = (char, pulse) => {
         val = charCode + 4; 
     } else if (char === " ") {
         val = 0;
+    } else {
+        // Mapping for symbols based on common Build Logic offsets
+        switch (char) {
+            case ".": val = 37; break;
+            case ",": val = 38; break;
+            case "!": val = 39; break;
+            case "?": val = 40; break;
+            case ":": val = 41; break;
+            case "-": val = 42; break;
+            case "'": val = 43; break;
+            case '"': val = 44; break;
+            default: val = 0; // Fallback to space for unknown chars
+        }
     }
 
     const charBits = val.toString(2).padStart(6, '0');
@@ -47,7 +61,15 @@ const getBinary = (char, pulse) => {
 
 // READ: The Roblox Transmitter hits this
 app.get('/typewriter/read', (req, res) => {
-    // If the last request was a letter, we MUST return 0 now to finish the pulse
+    // If the board needs a reset (New message started)
+    if (state.shouldResetBoard) {
+        state.shouldResetBoard = false;
+        state.isWaitingForReset = true; // Force a 00000000 after the reset pulse
+        // Sending 00000000 with Bit 8 high triggers the "Reset" on most Text Panel setups
+        return res.json({ "value": "10000000", "next": true });
+    }
+
+    // If the last request was a letter or reset, we MUST return 0 now to finish the pulse
     if (state.isWaitingForReset) {
         state.isWaitingForReset = false;
         return res.json({ "value": "00000000", "next": false });
@@ -122,6 +144,7 @@ app.post('/typewriter/api/type', (req, res) => {
     if (req.body.password !== ADMIN_PASSWORD) return res.status(403).send("NO");
     state.queue = req.body.message.split("");
     state.isWaitingForReset = false;
+    state.shouldResetBoard = true; // Trigger the board clear before typing
     res.json({ success: true });
 });
 
