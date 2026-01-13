@@ -3,7 +3,7 @@ const app = express();
 const PORT = process.env.PORT || 10000;
 
 // YOUR PASSWORD
-const ADMIN_PASSWORD = "2015"; 
+const ADMIN_PASSWORD = "197312"; 
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
@@ -40,16 +40,16 @@ const getBinary = (char, pulse) => {
         val = 0;
     } else {
         // Mapping for symbols based on common Build Logic offsets
-        // Adjusted values to prevent overlap/misalignment
+        // Re-aligned values to fix the mapping drift
         switch (char) {
-            case ".": val = 38; break;
-            case ",": val = 39; break;
-            case "!": val = 37; break; // Swapped to fix your issue
-            case "?": val = 40; break;
-            case ":": val = 41; break;
-            case "-": val = 42; break;
-            case "'": val = 43; break;
-            case '"': val = 44; break;
+            case "!": val = 33; break;
+            case ".": val = 34; break;
+            case "?": val = 35; break;
+            case ",": val = 36; break;
+            case ":": val = 37; break;
+            case "-": val = 38; break;
+            case "'": val = 39; break;
+            case '"': val = 40; break;
             default: val = 0; // Fallback to space for unknown chars
         }
     }
