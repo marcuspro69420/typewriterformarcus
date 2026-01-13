@@ -11,8 +11,7 @@ app.use(express.urlencoded({ extended: true }));
 let state = {
     currentBinary: "00000000",
     queue: [],
-    lastSentChar: null,
-    isWaitingForReset: false
+    isPulsing: false
 };
 
 /**
@@ -26,7 +25,6 @@ const getBinary = (char, pulse) => {
     let shift = "0";
     let val = 0;
 
-    // Determine Shift (Bit 7) and Value (Bits 1-6)
     if (charCode >= 65 && charCode <= 90) { // Uppercase A-Z
         shift = "1";
         val = charCode - 64; 
@@ -38,7 +36,6 @@ const getBinary = (char, pulse) => {
     } else if (char === " ") {
         val = 0;
     } else {
-        // Mapping for symbols based on common Build Logic offsets
         switch (char) {
             case "!": val = 33; break;
             case ".": val = 34; break;
@@ -48,7 +45,7 @@ const getBinary = (char, pulse) => {
             case "-": val = 38; break;
             case "'": val = 39; break;
             case '"': val = 40; break;
-            default: val = 0; // Fallback to space
+            default: val = 0;
         }
     }
 
@@ -60,18 +57,22 @@ const getBinary = (char, pulse) => {
 
 // READ: The Roblox Transmitter hits this
 app.get('/typewriter/read', (req, res) => {
-    // If the last request was a letter, we MUST return 0 now to finish the pulse
-    if (state.isWaitingForReset) {
-        state.isWaitingForReset = false;
+    // If we are currently in the middle of a 0.1s pulse gap, return zeros
+    if (state.isPulsing) {
         return res.json({ "value": "00000000", "next": false });
     }
 
-    // If there's a letter in the queue, send it and mark that we need a reset next
+    // If there's a letter, send it and start a very short cooldown
     if (state.queue.length > 0) {
         const nextChar = state.queue.shift();
-        state.isWaitingForReset = true; // Next request will be forced to 0
-        
         const binary = getBinary(nextChar, true);
+        
+        state.isPulsing = true;
+        // Short cooldown to ensure the pulse is "clean" but fast
+        setTimeout(() => {
+            state.isPulsing = false;
+        }, 150); 
+
         return res.json({ "value": binary, "next": true });
     }
 
@@ -134,7 +135,7 @@ app.get('/typewriter/edit', (req, res) => {
 app.post('/typewriter/api/type', (req, res) => {
     if (req.body.password !== ADMIN_PASSWORD) return res.status(403).send("NO");
     state.queue = req.body.message.split("");
-    state.isWaitingForReset = false;
+    state.isPulsing = false;
     res.json({ success: true });
 });
 
