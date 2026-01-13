@@ -15,7 +15,7 @@ let state = {
     currentBinary: "00000000",
     queue: [],
     isPulsing: false,
-    activeUsers: new Set() // Track unique cookies
+    activeUsers: new Set() 
 };
 
 /**
@@ -70,24 +70,23 @@ app.use((req, res, next) => {
     next();
 });
 
-// READ: The Roblox Transmitter hits this
+// READ: Hits this every time the Roblox Transmitter pings
 app.get('/typewriter/read', (req, res) => {
+    // If we just sent a character, we need to return 0 to end the pulse
     if (state.isPulsing) {
+        state.isPulsing = false;
         return res.json({ "value": "00000000", "next": false });
     }
 
+    // Send the next character from queue
     if (state.queue.length > 0) {
         const nextChar = state.queue.shift();
         const binary = getBinary(nextChar, true);
-        
         state.isPulsing = true;
-        setTimeout(() => {
-            state.isPulsing = false;
-        }, 150); 
-
         return res.json({ "value": binary, "next": true });
     }
 
+    // Default idle state
     res.json({ "value": "00000000", "next": false });
 });
 
@@ -96,10 +95,13 @@ app.get('/typewriter/edit', (req, res) => {
     const userCookie = req.cookies.user_cookie || "Unknown";
     const isMarcus = userCookie === "MARCUS";
     
+    // Convert active users to a string safely
+    const usersStr = Array.from(state.activeUsers).map(u => `<li>${u}</li>`).join('');
+
     const userListHtml = isMarcus 
         ? `<div class="admin-panel">
             <h3>ACTIVE USERS (MARCUS ONLY)</h3>
-            <ul>\${Array.from(state.activeUsers).map(u => `<li>\${u}</li>`).join('')}</ul>
+            <ul>${usersStr}</ul>
            </div>` 
         : "";
 
@@ -125,7 +127,7 @@ app.get('/typewriter/edit', (req, res) => {
         <body>
             <div class="box">
                 <h2>TYPEWRITER OS</h2>
-                <div class="cookie-info">IDENTITY: <span id="id-display">\${userCookie}</span></div>
+                <div class="cookie-info">IDENTITY: <span id="id-display">${userCookie}</span></div>
                 <input type="password" id="pass" placeholder="PASSWORD">
                 <input type="text" id="msg" placeholder="Type message..." autofocus>
                 <button onclick="send()">SEND TO BUILD LOGIC</button>
@@ -136,7 +138,7 @@ app.get('/typewriter/edit', (req, res) => {
                 </div>
             </div>
 
-            \${userListHtml}
+            ${userListHtml}
 
             <script>
                 const saved = localStorage.getItem('tp_pass');
