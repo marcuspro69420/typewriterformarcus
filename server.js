@@ -62,14 +62,15 @@ const getBinary = (char, pulse) => {
 // READ: The Roblox Transmitter hits this
 app.get('/typewriter/read', (req, res) => {
     // If the board needs a reset (New message started)
-    // We send 10000001: Bit 8 (Next) and Bit 1 (Value 1) are ON
+    // Sending 10000000 (Bit 8 ON, all data bits OFF) to trigger "Received POST" without typing a character
     if (state.shouldResetBoard) {
         state.shouldResetBoard = false;
         state.isWaitingForReset = true; 
-        return res.json({ "value": "10000001", "next": true });
+        return res.json({ "value": "10000000", "next": true });
     }
 
     // If the last request was a letter or reset, return 0 to finish the pulse
+    // This provides the necessary gap so the panel doesn't double-type
     if (state.isWaitingForReset) {
         state.isWaitingForReset = false;
         return res.json({ "value": "00000000", "next": false });
