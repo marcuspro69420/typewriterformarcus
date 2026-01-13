@@ -12,15 +12,14 @@ let state = {
     currentBinary: "00000000",
     queue: [],
     lastSentChar: null,
-    isWaitingForReset: false,
-    shouldResetBoard: false 
+    isWaitingForReset: false
 };
 
 /**
  * BUILD LOGIC WIKI MAPPING (Right to Left):
  * Bits 1-6: Character (0-63)
  * Bit 7: Shift (0 = Lower, 1 = Upper)
- * Bit 8: Next Pulse / Reset Pulse
+ * Bit 8: Next Pulse
  */
 const getBinary = (char, pulse) => {
     let charCode = char.charCodeAt(0);
@@ -61,25 +60,16 @@ const getBinary = (char, pulse) => {
 
 // READ: The Roblox Transmitter hits this
 app.get('/typewriter/read', (req, res) => {
-    // If the board needs a reset (New message started)
-    // Sending 10000000 (Bit 8 ON, all data bits OFF) to trigger "Received POST" without typing a character
-    if (state.shouldResetBoard) {
-        state.shouldResetBoard = false;
-        state.isWaitingForReset = true; 
-        return res.json({ "value": "10000000", "next": true });
-    }
-
-    // If the last request was a letter or reset, return 0 to finish the pulse
-    // This provides the necessary gap so the panel doesn't double-type
+    // If the last request was a letter, we MUST return 0 now to finish the pulse
     if (state.isWaitingForReset) {
         state.isWaitingForReset = false;
         return res.json({ "value": "00000000", "next": false });
     }
 
-    // Process queue
+    // If there's a letter in the queue, send it and mark that we need a reset next
     if (state.queue.length > 0) {
         const nextChar = state.queue.shift();
-        state.isWaitingForReset = true; 
+        state.isWaitingForReset = true; // Next request will be forced to 0
         
         const binary = getBinary(nextChar, true);
         return res.json({ "value": binary, "next": true });
@@ -145,7 +135,6 @@ app.post('/typewriter/api/type', (req, res) => {
     if (req.body.password !== ADMIN_PASSWORD) return res.status(403).send("NO");
     state.queue = req.body.message.split("");
     state.isWaitingForReset = false;
-    state.shouldResetBoard = true; 
     res.json({ success: true });
 });
 
