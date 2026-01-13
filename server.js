@@ -11,130 +11,130 @@ app.use(express.urlencoded({ extended: true }));
 let state = {
     currentBinary: "00000000",
     queue: [],
-    lastMessage: "",
     isPulsing: false
 };
 
 /**
- * getBinary logic:
- * 'A' charCode is 65. 
- * toString(2) makes it "1000001".
- * padStart(7, '0') makes it "1000001".
- * Output is 7 bits + Pulse Bit (Pin 8).
+ * BUILD LOGIC WIKI MAPPING (Right to Left):
+ * Bits 1-6: Character (0-63)
+ * Bit 7: Shift (0 = Lower, 1 = Upper)
+ * Bit 8: Next Pulse
  */
 const getBinary = (char, pulse) => {
-    const charCode = char.charCodeAt(0);
-    // Standard 7-bit ASCII
-    let bin = charCode.toString(2).padStart(7, '0');
+    let charCode = char.charCodeAt(0);
+    let shift = "0";
+    let val = 0;
+
+    // Determine Shift (Bit 7) and Value (Bits 1-6)
+    if (charCode >= 65 && charCode <= 90) { // Uppercase A-Z
+        shift = "1";
+        val = charCode - 64; 
+    } else if (charCode >= 97 && charCode <= 122) { // Lowercase a-z
+        shift = "0";
+        val = charCode - 96;
+    } else if (charCode >= 48 && charCode <= 57) { // Numbers 0-9
+        val = charCode + 4; // Mapping per wiki offset
+    } else if (char === " ") {
+        val = 0;
+    }
+
+    // Convert value to 6 bits (Bits 1-6)
+    const charBits = val.toString(2).padStart(6, '0');
     
-    // The pulse bit (Pin 8) is added at the end
-    return bin + (pulse ? "1" : "0");
+    // Construct final string: [Bit 8 (Pulse)][Bit 7 (Shift)][Bits 6-1 (Value)]
+    // We reverse the logic to match "Right to Left" expectations in wiring
+    const nextBit = pulse ? "1" : "0";
+    
+    // Result: [Next][Shift][CharBits...]
+    return nextBit + shift + charBits;
 };
 
-// READ: Hits this every time the Transmitter pings
-app.get('/gemini/read', (req, res) => {
-    // If we just finished a pulse, send a reset (00000000) to clear the line
-    if (state.isPulsing) {
-        state.isPulsing = false;
-        state.currentBinary = "00000000";
-        return res.json({
-            "value": "00000000",
-            "next": false
-        });
+// READ: The Roblox Transmitter hits this
+app.get('/typewriter/read', (req, res) => {
+    // If we are idle, keep the line dead
+    if (state.queue.length === 0 && !state.isPulsing) {
+        return res.json({ "value": "00000000", "next": false });
     }
 
-    // If there is a new letter in the queue, send it and set the pulse flag
-    if (state.queue.length > 0) {
+    // Process queue if not currently mid-pulse
+    if (state.queue.length > 0 && !state.isPulsing) {
         const nextChar = state.queue.shift();
         state.isPulsing = true;
+        
+        // Send the character with Bit 8 HIGH
         state.currentBinary = getBinary(nextChar, true);
 
-        // Instant reset trigger (0.01ms)
+        // HOLD FOR 0.5 SECONDS
         setTimeout(() => {
-            state.currentBinary = "00000000";
+            state.currentBinary = "00000000"; // Clear line
             state.isPulsing = false;
-        }, 0.01);
+        }, 500);
 
-        return res.json({
-            "value": state.currentBinary,
-            "next": true
-        });
+        return res.json({ "value": state.currentBinary, "next": true });
     }
 
-    // Default idle state
-    state.currentBinary = "00000000";
-    res.json({
-        "value": "00000000",
-        "next": false
-    });
+    // While pulsing/holding, return the current character state
+    res.json({ "value": state.currentBinary, "next": state.currentBinary.startsWith("1") });
 });
 
-// TYPE: Internal API for the typewriter
-app.post('/api/type', (req, res) => {
-    const { message, password } = req.body;
-    
-    if (password !== ADMIN_PASSWORD) {
-        return res.status(403).json({ error: "WRONG PASSWORD." });
-    }
-
-    if (!message) return res.status(400).json({ error: "Empty message" });
-
-    state.lastMessage = message;
-    state.queue = message.split("");
-    state.isPulsing = false;
-    
-    console.log("Queued message:", message);
-    res.json({ success: true, queued: message.length });
-});
-
-app.get('/gemini/edit', (req, res) => {
+// WEB INTERFACE
+app.get('/typewriter/edit', (req, res) => {
     res.send(`
         <!DOCTYPE html>
         <html lang="en">
         <head>
             <meta charset="UTF-8">
             <meta name="viewport" content="width=device-width, initial-scale=1.0">
-            <title>GEBIDI | TYPEWRITER</title>
+            <title>TYPEWRITER | TERMINAL</title>
             <style>
-                body { background: #050505; color: #00ff41; font-family: monospace; padding: 20px; display: flex; justify-content: center; }
-                .container { border: 1px solid #00ff41; padding: 20px; width: 100%; max-width: 500px; box-shadow: 0 0 15px #00ff41; }
-                input { background: #111; color: #00ff41; border: 1px solid #00ff41; padding: 12px; width: 100%; box-sizing: border-box; margin-bottom: 10px; font-size: 16px; }
-                button { background: #00ff41; color: #000; border: none; padding: 12px; width: 100%; cursor: pointer; font-weight: bold; font-size: 16px; }
-                .status-box { background: #111; padding: 10px; border-left: 3px solid cyan; margin: 15px 0; min-height: 40px; }
+                body { background: #000; color: #0f0; font-family: 'Courier New', monospace; padding: 20px; display: flex; justify-content: center; }
+                .box { border: 2px solid #0f0; padding: 20px; width: 100%; max-width: 450px; box-shadow: 0 0 20px #0f0; }
+                input { background: #000; color: #0f0; border: 1px solid #0f0; padding: 10px; width: 100%; box-sizing: border-box; margin-bottom: 10px; outline: none; }
+                button { background: #0f0; color: #000; border: none; padding: 10px; width: 100%; cursor: pointer; font-weight: bold; }
+                .status { margin-top: 15px; font-size: 12px; border-top: 1px solid #0f0; padding-top: 10px; }
             </style>
         </head>
         <body>
-            <div class="container">
-                <h1>GEBIDI TYPEWRITER</h1>
+            <div class="box">
+                <h2>TYPEWRITER OS</h2>
                 <input type="password" id="pass" placeholder="PASSWORD">
-                <input type="text" id="msg" placeholder="Type here..." autofocus>
-                <button onclick="sendMsg()">SEND</button>
-                <div class="status-box" id="status">Ready.</div>
+                <input type="text" id="msg" placeholder="Type message..." autofocus>
+                <button onclick="send()">SEND TO BUILD LOGIC</button>
+                <div class="status" id="stat">STATUS: READY</div>
             </div>
             <script>
-                const savedPass = localStorage.getItem('gebidi_pass');
-                if (savedPass) document.getElementById('pass').value = savedPass;
+                const saved = localStorage.getItem('tp_pass');
+                if (saved) document.getElementById('pass').value = saved;
 
-                async function sendMsg() {
-                    const pass = document.getElementById('pass').value;
-                    const msg = document.getElementById('msg').value;
-                    localStorage.setItem('gebidi_pass', pass);
-                    try {
-                        await fetch('/api/type', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ message: msg, password: pass })
-                        });
+                async function send() {
+                    const p = document.getElementById('pass').value;
+                    const m = document.getElementById('msg').value;
+                    localStorage.setItem('tp_pass', p);
+                    
+                    const res = await fetch('/typewriter/api/type', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ message: m, password: p })
+                    });
+                    
+                    if (res.ok) {
                         document.getElementById('msg').value = "";
-                        document.getElementById('status').innerText = "Sent: " + msg;
-                    } catch (e) { console.error(e); }
+                        document.getElementById('stat').innerText = "TRANSMITTING: " + m;
+                    }
                 }
-                document.getElementById('msg').addEventListener('keypress', (e) => { if (e.key === 'Enter') sendMsg(); });
+                document.getElementById('msg').addEventListener('keypress', (e) => { if(e.key === 'Enter') send(); });
             </script>
         </body>
         </html>
     `);
 });
 
-app.get('/', (req, res) => res.redirect('/gemini/edit'));
+app.post('/typewriter/api/type', (req, res) => {
+    if (req.body.password !== ADMIN_PASSWORD) return res.status(403).send("NO");
+    state.queue = req.body.message.split("");
+    state.isPulsing = false;
+    res.json({ success: true });
+});
+
+app.get('/', (req, res) => res.redirect('/typewriter/edit'));
 app.listen(PORT, '0.0.0.0');
