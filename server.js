@@ -13,7 +13,7 @@ let state = {
     queue: [],
     lastSentChar: null,
     isWaitingForReset: false,
-    shouldResetBoard: false // New flag for the "Received POST" trigger
+    shouldResetBoard: false 
 };
 
 /**
@@ -40,7 +40,6 @@ const getBinary = (char, pulse) => {
         val = 0;
     } else {
         // Mapping for symbols based on common Build Logic offsets
-        // Re-aligned values to fix the mapping drift
         switch (char) {
             case "!": val = 33; break;
             case ".": val = 34; break;
@@ -50,7 +49,7 @@ const getBinary = (char, pulse) => {
             case "-": val = 38; break;
             case "'": val = 39; break;
             case '"': val = 40; break;
-            default: val = 0; // Fallback to space for unknown chars
+            default: val = 0; // Fallback to space
         }
     }
 
@@ -63,23 +62,23 @@ const getBinary = (char, pulse) => {
 // READ: The Roblox Transmitter hits this
 app.get('/typewriter/read', (req, res) => {
     // If the board needs a reset (New message started)
+    // We send 10000001: Bit 8 (Next) and Bit 1 (Value 1) are ON
     if (state.shouldResetBoard) {
         state.shouldResetBoard = false;
-        state.isWaitingForReset = true; // Force a 00000000 after the reset pulse
-        // Sending 00000000 with Bit 8 high triggers the "Reset" on most Text Panel setups
-        return res.json({ "value": "10000000", "next": true });
+        state.isWaitingForReset = true; 
+        return res.json({ "value": "10000001", "next": true });
     }
 
-    // If the last request was a letter or reset, we MUST return 0 now to finish the pulse
+    // If the last request was a letter or reset, return 0 to finish the pulse
     if (state.isWaitingForReset) {
         state.isWaitingForReset = false;
         return res.json({ "value": "00000000", "next": false });
     }
 
-    // If there's a letter in the queue, send it and mark that we need a reset next
+    // Process queue
     if (state.queue.length > 0) {
         const nextChar = state.queue.shift();
-        state.isWaitingForReset = true; // Next request will be forced to 0
+        state.isWaitingForReset = true; 
         
         const binary = getBinary(nextChar, true);
         return res.json({ "value": binary, "next": true });
@@ -145,7 +144,7 @@ app.post('/typewriter/api/type', (req, res) => {
     if (req.body.password !== ADMIN_PASSWORD) return res.status(403).send("NO");
     state.queue = req.body.message.split("");
     state.isWaitingForReset = false;
-    state.shouldResetBoard = true; // Trigger the board clear before typing
+    state.shouldResetBoard = true; 
     res.json({ success: true });
 });
 
