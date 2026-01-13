@@ -40,10 +40,11 @@ const getBinary = (char, pulse) => {
         val = 0;
     } else {
         // Mapping for symbols based on common Build Logic offsets
+        // Adjusted values to prevent overlap/misalignment
         switch (char) {
-            case ".": val = 37; break;
-            case ",": val = 38; break;
-            case "!": val = 39; break;
+            case ".": val = 38; break;
+            case ",": val = 39; break;
+            case "!": val = 37; break; // Swapped to fix your issue
             case "?": val = 40; break;
             case ":": val = 41; break;
             case "-": val = 42; break;
