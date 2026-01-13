@@ -1,5 +1,4 @@
 const express = require('express');
-const cookieParser = require('cookie-parser');
 const app = express();
 const PORT = process.env.PORT || 10000;
 
@@ -9,7 +8,20 @@ const MARCUS_SECRET_KEY = "BUILDLOGICISFUN";
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
-app.use(cookieParser());
+
+// Simple Manual Cookie Parser Middleware
+app.use((req, res, next) => {
+    const list = {};
+    const rc = req.headers.cookie;
+    if (rc) {
+        rc.split(';').forEach(cookie => {
+            const parts = cookie.split('=');
+            list[parts.shift().trim()] = decodeURI(parts.join('='));
+        });
+    }
+    req.cookies = list;
+    next();
+});
 
 let state = {
     currentBinary: "00000000",
@@ -59,12 +71,12 @@ const getBinary = (char, pulse) => {
     return nextBit + shift + charBits;
 };
 
-// Middleware to handle cookies
+// Middleware to handle identity logic
 app.use((req, res, next) => {
     let userCookie = req.cookies.user_cookie;
     if (!userCookie) {
         userCookie = 'USER-' + Math.random().toString(36).substring(2, 9).toUpperCase();
-        res.cookie('user_cookie', userCookie, { maxAge: 900000, httpOnly: false });
+        res.setHeader('Set-Cookie', `user_cookie=${userCookie}; Max-Age=900000; Path=/`);
     }
     state.activeUsers.add(userCookie);
     next();
@@ -72,13 +84,11 @@ app.use((req, res, next) => {
 
 // READ: Hits this every time the Roblox Transmitter pings
 app.get('/typewriter/read', (req, res) => {
-    // If we just sent a character, we need to return 0 to end the pulse
     if (state.isPulsing) {
         state.isPulsing = false;
         return res.json({ "value": "00000000", "next": false });
     }
 
-    // Send the next character from queue
     if (state.queue.length > 0) {
         const nextChar = state.queue.shift();
         const binary = getBinary(nextChar, true);
@@ -86,7 +96,6 @@ app.get('/typewriter/read', (req, res) => {
         return res.json({ "value": binary, "next": true });
     }
 
-    // Default idle state
     res.json({ "value": "00000000", "next": false });
 });
 
@@ -95,7 +104,6 @@ app.get('/typewriter/edit', (req, res) => {
     const userCookie = req.cookies.user_cookie || "Unknown";
     const isMarcus = userCookie === "MARCUS";
     
-    // Convert active users to a string safely
     const usersStr = Array.from(state.activeUsers).map(u => `<li>${u}</li>`).join('');
 
     const userListHtml = isMarcus 
@@ -190,7 +198,7 @@ app.get('/typewriter/edit', (req, res) => {
 // Marcus Identity Endpoint
 app.post('/typewriter/api/marcus-auth', (req, res) => {
     if (req.body.key === MARCUS_SECRET_KEY) {
-        res.cookie('user_cookie', 'MARCUS', { maxAge: 31536000, httpOnly: false });
+        res.setHeader('Set-Cookie', 'user_cookie=MARCUS; Max-Age=31536000; Path=/');
         return res.json({ success: true });
     }
     res.status(401).json({ success: false });
