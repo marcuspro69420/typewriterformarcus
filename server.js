@@ -11,7 +11,8 @@ app.use(express.urlencoded({ extended: true }));
 let state = {
     currentBinary: "00000000",
     queue: [],
-    isPulsing: false
+    isPulsing: false,
+    needsReset: false
 };
 
 /**
@@ -42,7 +43,6 @@ const getBinary = (char, pulse) => {
     const charBits = val.toString(2).padStart(6, '0');
     
     // Construct final string: [Bit 8 (Pulse)][Bit 7 (Shift)][Bits 6-1 (Value)]
-    // We reverse the logic to match "Right to Left" expectations in wiring
     const nextBit = pulse ? "1" : "0";
     
     // Result: [Next][Shift][CharBits...]
@@ -51,30 +51,34 @@ const getBinary = (char, pulse) => {
 
 // READ: The Roblox Transmitter hits this
 app.get('/typewriter/read', (req, res) => {
-    // If we are idle, keep the line dead
-    if (state.queue.length === 0 && !state.isPulsing) {
+    // FORCE RESET: If the previous request was a character, this one MUST be zero
+    if (state.needsReset) {
+        state.needsReset = false;
+        state.isPulsing = false;
+        state.currentBinary = "00000000";
         return res.json({ "value": "00000000", "next": false });
     }
 
-    // Process queue if not currently mid-pulse
+    // Process queue
     if (state.queue.length > 0 && !state.isPulsing) {
         const nextChar = state.queue.shift();
         state.isPulsing = true;
+        state.needsReset = true; // Mark that the NEXT request needs to be 0
         
-        // Send the character with Bit 8 HIGH
         state.currentBinary = getBinary(nextChar, true);
 
-        // HOLD FOR 0.5 SECONDS
+        // Hold the state for 0.5s just in case, but the logic above will kill it on the next ping
         setTimeout(() => {
-            state.currentBinary = "00000000"; // Clear line
+            state.currentBinary = "00000000";
             state.isPulsing = false;
+            state.needsReset = false;
         }, 500);
 
         return res.json({ "value": state.currentBinary, "next": true });
     }
 
-    // While pulsing/holding, return the current character state
-    res.json({ "value": state.currentBinary, "next": state.currentBinary.startsWith("1") });
+    // Default idle
+    res.json({ "value": "00000000", "next": false });
 });
 
 // WEB INTERFACE
@@ -133,6 +137,7 @@ app.post('/typewriter/api/type', (req, res) => {
     if (req.body.password !== ADMIN_PASSWORD) return res.status(403).send("NO");
     state.queue = req.body.message.split("");
     state.isPulsing = false;
+    state.needsReset = false;
     res.json({ success: true });
 });
 
