@@ -130,6 +130,7 @@ app.get('/typewriter/read', (req, res) => {
 app.get('/typewriter/edit', (req, res) => {
     const userCookie = req.cookies.user_cookie || "Unknown";
     const isMarcus = ADMIN_IDENTITIES.includes(userCookie);
+    const isRandomUser = userCookie.startsWith("USER-");
     
     const usersStr = Object.values(state.activeUsers).map(u => {
         const isAdmin = ADMIN_IDENTITIES.includes(u.id);
@@ -195,7 +196,7 @@ app.get('/typewriter/edit', (req, res) => {
                 }
                 button:hover { background: #fff; box-shadow: 0 0 20px #fff; transform: scale(1.02); }
                 .auth-grid { margin-top:15px; display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; }
-                .auth-btn { background: #111; color: #444; border: 1px solid #333; padding: 10px; cursor: crosshair; font-size: 10px; font-weight: 900; }
+                .auth-btn { background: #111; color: #444; border: 1px solid #333; padding: 10px; cursor: crosshair; font-size: 10px; font-weight: 900; text-align:center; }
                 .auth-btn:hover { color: #00ff41; border-color: #00ff41; background: #050505; }
                 #stat { font-weight: 900; text-align: center; margin-top: 20px; font-size: 16px; text-shadow: 0 0 8px #00ff41; border-top: 1px solid #111; padding-top: 10px; }
             </style>
@@ -203,8 +204,10 @@ app.get('/typewriter/edit', (req, res) => {
         <body>
             <div class="box">
                 <h2>TYPEWRITER TERMINAL</h2>
-                <div style="color:cyan; margin-bottom:10px; font-weight:900; text-align:center; font-size: 14px;">SESSION ID: \${userCookie}</div>
-                <input type="password" id="pass" placeholder="ENTER ACCESS CODE">
+                <div style="color:cyan; margin-bottom:10px; font-weight:900; text-align:center; font-size: 14px;">SESSION ID: ${userCookie}</div>
+                
+                ${isRandomUser ? `<input type="password" id="pass" placeholder="ENTER ACCESS CODE">` : `<div style="display:none;"><input type="password" id="pass" value="BYPASS"></div>`}
+                
                 <textarea id="msg" placeholder="TYPE MESSAGE FOR ROBOT..."></textarea>
                 <button onclick="send()">EXECUTE TRANSMISSION</button>
                 <div id="stat">SYSTEM STATUS: READY</div>
@@ -216,11 +219,11 @@ app.get('/typewriter/edit', (req, res) => {
                     <button class="auth-btn" onclick="setMarcus('INTENS')">I</button>
                 </div>
             </div>
-            \${isMarcus ? \`
+            ${isMarcus ? `
             <div style="margin-top:25px; border:2px solid red; padding:15px; width:100%; max-width:500px; background:#0d0000; box-shadow: 0 0 20px red;">
                 <h3 style="color:red; margin:0 0 10px 0; text-transform:uppercase; letter-spacing:2px; font-weight:900;">ADMIN INTEL / BAN CONTROL</h3>
-                <ul style="padding:0; margin:0; font-weight:900;">\${usersStr}</ul>
-            </div>\` : ''}
+                <ul style="padding:0; margin:0; font-weight:900;">${usersStr}</ul>
+            </div>` : ''}
             <script>
                 async function banUser(id) {
                     if(!confirm("CONFIRM PERMANENT TERMINATION FOR " + id + "?")) return;
@@ -290,8 +293,13 @@ app.post('/typewriter/api/marcus-auth', (req, res) => {
 
 app.post('/typewriter/api/type', (req, res) => {
     const { message, password } = req.body;
-    if (!ADMIN_PASSWORD) return res.status(500).send("Server missing password config.");
-    if (password !== ADMIN_PASSWORD) return res.status(403).send();
+    const userCookie = req.cookies.user_cookie || "Unknown";
+    
+    // Admins bypass password check; others must provide the ADMIN_PASSWORD
+    if (!ADMIN_IDENTITIES.includes(userCookie)) {
+        if (!ADMIN_PASSWORD) return res.status(500).send("Server missing password config.");
+        if (password !== ADMIN_PASSWORD) return res.status(403).send();
+    }
     
     state.queue = []; 
     state.currentBinary = "00000000";
