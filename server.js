@@ -6,15 +6,9 @@ const PORT = process.env.PORT || 10000;
 const ADMIN_PASSWORD = "2015"; 
 const MARCUS_SECRET_KEY = "BUILDLOGICISFUN";
 
-// YOUR TRUSTED DEVICES (Strictly for Marcus identities)
-const TRUSTED_DEVICES = ["iPhone", "ProDesk", "Surface"]; 
-
 // THE BAN HAMMER - IDs you provided
 const BANNED_COOKIES = [
-    "USER-CUY36L1", "USER-KONJQ7K", "USER-71BIHAM", "USER-W02YA6Q", 
-    "USER-25B069J", "USER-HUSXBGJ", "USER-VIVY7LH", "USER-35PTBVZ", 
-    "USER-9TWZ2HW", "USER-225NO4W", "USER-AU3X8KS", "USER-O7X5WDB", 
-    "USER-XJ8QO87", "USER-JA6T9WE", "USER-N9PM9AZ", "USER-AOYEDIZ"
+    ""
 ];
 
 // LIST OF ADMIN IDENTITIES
@@ -79,26 +73,15 @@ const getBinary = (char, pulse) => {
     return nextBit + shift + charBits;
 };
 
-// Middleware to handle identity, BANS, and DEVICE KICKS
+// Middleware to handle identity and BANS
 app.use((req, res, next) => {
     let userCookie = req.cookies.user_cookie;
-    const userAgent = req.headers['user-agent'] || "Unknown Device";
+    const userAgent = (req.headers['user-agent'] || "Unknown Device");
 
     // 1. Check if they are banned
     if (userCookie && BANNED_COOKIES.includes(userCookie)) {
         return res.redirect("https://www.youtube.com/watch?v=dQw4w9WgXcQ");
     }
-
-    // 2. DEVICE KICK: Strictly enforce device for Marcus identities
-    if (userCookie === "MARCUS" || userCookie === "MARCUSCABALUNA") {
-        const isTrusted = TRUSTED_DEVICES.some(device => userAgent.includes(device));
-        if (!isTrusted) {
-            console.log(`SEC VIOLATION: ${userCookie} from unauthorized device: ${userAgent}`);
-            return res.redirect("https://www.youtube.com/watch?v=dQw4w9WgXcQ");
-        }
-    }
-    
-    // Note: NATAL, AISULTAN, and INTENS do NOT have device restrictions here yet.
 
     if (!userCookie) {
         userCookie = 'USER-' + Math.random().toString(36).substring(2, 9).toUpperCase();
@@ -168,7 +151,7 @@ app.get('/typewriter/edit', (req, res) => {
                 .cookie-info { margin-bottom: 10px; font-size: 14px; color: cyan; }
                 .admin-panel { margin-top: 20px; border: 1px dashed red; padding: 10px; width: 100%; max-width: 450px; background: #050000; }
                 .auth-grid { margin-top:10px; display: grid; grid-template-columns: repeat(5, 1fr); gap: 5px; }
-                .auth-btn { background: #111; color: #222; font-size: 8px; border: none; padding: 5px; cursor: crosshair; }
+                .auth-btn { background: #111; color: #111; font-size: 8px; border: none; padding: 5px; cursor: crosshair; }
             </style>
         </head>
         <body>
@@ -231,15 +214,7 @@ app.get('/typewriter/edit', (req, res) => {
 
 app.post('/typewriter/api/marcus-auth', (req, res) => {
     const { key, identity } = req.body;
-    const userAgent = req.headers['user-agent'] || "";
-
     if (key === MARCUS_SECRET_KEY) {
-        // Enforce device strictly for Marcus IDs
-        if (identity === "MARCUS" || identity === "MARCUSCABALUNA") {
-            const isTrusted = TRUSTED_DEVICES.some(device => userAgent.includes(device));
-            if (!isTrusted) return res.status(401).json({ success: false });
-        }
-
         if (ADMIN_IDENTITIES.includes(identity)) {
             res.setHeader('Set-Cookie', `user_cookie=${identity}; Max-Age=31536000; Path=/`);
             return res.json({ success: true });
@@ -251,14 +226,8 @@ app.post('/typewriter/api/marcus-auth', (req, res) => {
 app.post('/typewriter/api/type', (req, res) => {
     const { message, password } = req.body;
     const userCookie = req.cookies.user_cookie;
-    const userAgent = req.headers['user-agent'] || "";
 
     if (BANNED_COOKIES.includes(userCookie)) return res.status(403).json({ redirect: true });
-
-    if (userCookie === "MARCUS" || userCookie === "MARCUSCABALUNA") {
-        const isTrusted = TRUSTED_DEVICES.some(device => userAgent.includes(device));
-        if (!isTrusted) return res.status(403).json({ redirect: true });
-    }
 
     if (!password || password !== ADMIN_PASSWORD) return res.status(403).json({ redirect: true });
     
