@@ -2,6 +2,9 @@ const express = require('express');
 const app = express();
 const PORT = process.env.PORT || 10000;
 
+// Tell Express to trust the Render/Cloudflare proxy headers
+app.set('trust proxy', true);
+
 /**
  * 🕵️ STEALTH CONFIGURATION
  * Logic paths are pulled from Env Variables to hide them from the source.
@@ -47,7 +50,8 @@ let state = {
  */
 app.use((req, res, next) => {
     const userCookie = req.cookies.user_cookie;
-    const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
+    // Fix: Use req.ip which works correctly when 'trust proxy' is enabled
+    const ip = req.ip || req.headers['x-forwarded-for'] || req.socket.remoteAddress;
 
     // Track users
     if (userCookie) {
