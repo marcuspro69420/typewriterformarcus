@@ -142,6 +142,7 @@ app.use((req, res, next) => {
 
 // ROBLOX READ ENDPOINT
 app.get('/typewriter/read', (req, res) => {
+    // Force a clear state if nothing is happening
     if (state.queue.length === 0 && !state.isPulsing) {
         state.currentBinary = "00000000";
     }
@@ -149,9 +150,12 @@ app.get('/typewriter/read', (req, res) => {
     if (state.queue.length > 0 && !state.isPulsing) {
         const nextChar = state.queue.shift();
         state.isPulsing = true;
+        
+        // Send the character bits + pulse bit (bit 1)
         state.currentBinary = getBinary(nextChar, true);
 
-        // RESET AFTER 50ms (00000000)
+        // RESET AFTER 50ms: Force back to "00000000" to clear the text panel input
+        // This ensures pins are off before the next poll, preventing overlap.
         setTimeout(() => {
             state.currentBinary = "00000000"; 
             state.isPulsing = false;
