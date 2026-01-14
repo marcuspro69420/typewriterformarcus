@@ -134,12 +134,12 @@ app.get('/typewriter/edit', (req, res) => {
     const usersStr = Object.values(state.activeUsers).map(u => {
         const isAdmin = ADMIN_IDENTITIES.includes(u.id);
         return `
-        <li style="border-bottom: 1px solid #222; padding: 5px 0; font-size: 11px; list-style:none; display:flex; justify-content:space-between; align-items:center;">
+        <li style="border-bottom: 1px solid #222; padding: 10px 0; font-size: 13px; list-style:none; display:flex; justify-content:space-between; align-items:center;">
             <span>
                 <b style="color: ${isAdmin ? 'cyan' : '#f0f'}">${u.id}</b> 
-                <span style="color:#888">(${u.device})</span>
+                <span style="color:#888; font-size: 10px;"> (${u.device})</span>
             </span>
-            ${(!isAdmin) ? `<button onclick="banUser('${u.id}')" style="background:red; color:white; border:none; padding:2px 5px; cursor:pointer; font-size:9px;">BAN</button>` : '<span style="color:cyan">[ADMIN]</span>'}
+            ${(!isAdmin) ? `<button onclick="banUser('${u.id}')" style="background:red; color:white; border:none; padding:5px 10px; cursor:pointer; font-size:10px; font-weight:900;">BAN</button>` : '<span style="color:cyan; font-weight:900;">[ADMIN]</span>'}
         </li>`;
     }).join('');
 
@@ -195,7 +195,7 @@ app.get('/typewriter/edit', (req, res) => {
                 }
                 button:hover { background: #fff; box-shadow: 0 0 20px #fff; transform: scale(1.02); }
                 .auth-grid { margin-top:15px; display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; }
-                .auth-btn { background: #111; color: #444; border: 1px solid #333; padding: 10px; cursor: crosshair; font-size: 10px; }
+                .auth-btn { background: #111; color: #444; border: 1px solid #333; padding: 10px; cursor: crosshair; font-size: 10px; font-weight: 900; }
                 .auth-btn:hover { color: #00ff41; border-color: #00ff41; background: #050505; }
                 #stat { font-weight: 900; text-align: center; margin-top: 20px; font-size: 16px; text-shadow: 0 0 8px #00ff41; border-top: 1px solid #111; padding-top: 10px; }
             </style>
