@@ -13,7 +13,13 @@ const MARCUS_SECRET_KEY = process.env.MARCUS_SECRET_KEY;
 let BANNED_COOKIES = [];
 let KICKED_COOKIES = [];
 let BANNED_IPS = new Set();
-const ADMIN_IDENTITIES = ["MARCUS", "MARCUSCABALUNA", "NATAL", "AISULTAN", "INTENS"];
+
+// TRANSMITTER IPS - Buttons will be hidden for these to prevent accidental self-kicking
+const TRANSMITTER_IPS = ["128.116.55.218", "172.71.124.123", "10.16.184.164"];
+
+// UPDATED ADMIN LIST: Added M2 for your friend.
+const ADMIN_IDENTITIES = ["MARCUS", "MARCUSCABALUNA", "M2", "NATAL", "AISULTAN", "INTENS"];
+const SUPER_ADMIN = "MARCUS"; // Only this ID gets the kick/ban buttons
 
 // ANTI-DOS: Leaky Bucket Rate Limiting
 const ipRequestCount = new Map();
@@ -142,7 +148,6 @@ app.use((req, res, next) => {
 
 // ROBLOX READ ENDPOINT
 app.get('/typewriter/read', (req, res) => {
-    // Force a clear state if nothing is happening
     if (state.queue.length === 0 && !state.isPulsing) {
         state.currentBinary = "00000000";
     }
@@ -150,12 +155,8 @@ app.get('/typewriter/read', (req, res) => {
     if (state.queue.length > 0 && !state.isPulsing) {
         const nextChar = state.queue.shift();
         state.isPulsing = true;
-        
-        // Send the character bits + pulse bit (bit 1)
         state.currentBinary = getBinary(nextChar, true);
 
-        // RESET AFTER 50ms: Force back to "00000000" to clear the text panel input
-        // This ensures pins are off before the next poll, preventing overlap.
         setTimeout(() => {
             state.currentBinary = "00000000"; 
             state.isPulsing = false;
@@ -171,20 +172,29 @@ app.get('/typewriter/read', (req, res) => {
 // MAIN UI
 app.get('/typewriter/edit', (req, res) => {
     const userCookie = req.cookies.user_cookie || "Unknown";
-    const isMarcus = ADMIN_IDENTITIES.includes(userCookie);
+    const isMarcus = userCookie === SUPER_ADMIN;
+    const isAdmin = ADMIN_IDENTITIES.includes(userCookie);
     const isRandomUser = userCookie.startsWith("USER-");
     
     const usersStr = Object.values(state.activeUsers).map(u => {
-        const isAdmin = ADMIN_IDENTITIES.includes(u.id);
+        const uIsAdmin = ADMIN_IDENTITIES.includes(u.id);
         const isKicked = KICKED_COOKIES.includes(u.id);
+        const isBanned = BANNED_COOKIES.includes(u.id);
+        const isTransmitter = TRANSMITTER_IPS.includes(u.ip);
+
         return `
         <li style="border-bottom: 1px solid #222; padding: 10px 0; font-size: 11px; list-style:none; display:flex; justify-content:space-between; align-items:center;">
-            <span style="color:${isKicked ? 'gray' : 'white'}"><b>${u.id}</b> <small>(${u.ip})</small></span>
+            <span style="color:${isKicked ? 'orange' : (isBanned ? 'red' : (isTransmitter ? '#00ffff' : 'white'))}">
+                <b>${u.id}</b> ${isKicked ? '[KICKED]' : ''} ${isTransmitter ? '[TRANSMITTER]' : ''} <small>(${u.ip})</small>
+            </span>
             <div>
-                ${(!isAdmin) ? `
-                    <button onclick="kickUser('${u.id}')" style="background:orange; border:none; padding:2px 5px; cursor:pointer;">KICK</button>
+                ${(isMarcus && !uIsAdmin && !isTransmitter) ? `
+                    ${isKicked ? 
+                        `<button onclick="unkickUser('${u.id}')" style="background:green; color:white; border:none; padding:2px 5px; cursor:pointer;">UNKICK</button>` : 
+                        `<button onclick="kickUser('${u.id}')" style="background:orange; border:none; padding:2px 5px; cursor:pointer;">KICK</button>`
+                    }
                     <button onclick="banUser('${u.id}')" style="background:red; color:white; border:none; padding:2px 5px; cursor:pointer;">BAN</button>
-                ` : '<span style="color:cyan;">[ADMIN]</span>'}
+                ` : (isTransmitter ? '<span style="color:#00ffff;">[PROTECTED]</span>' : (uIsAdmin ? '<span style="color:cyan;">[ADMIN]</span>' : ''))}
             </div>
         </li>`;
     }).join('');
@@ -209,14 +219,15 @@ app.get('/typewriter/edit', (req, res) => {
                 <textarea id="msg" placeholder="TRANSMIT..."></textarea>
                 <button onclick="send()">SEND TO ROBOT</button>
             </div>
-            ${isMarcus ? `<div style="margin-top:20px; border:1px solid red; padding:10px; width:100%; max-width:500px;">
+            ${isAdmin ? `<div style="margin-top:20px; border:1px solid red; padding:10px; width:100%; max-width:500px;">
                 <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
                     <h4 style="color:red; margin:0;">ACTIVE FEEDS</h4>
-                    <button onclick="kickAll()" style="background:red; color:white; width:auto; padding:5px 10px; font-size:10px;">KICK ALL</button>
+                    ${isMarcus ? `<button onclick="kickAll()" style="background:red; color:white; width:auto; padding:5px 10px; font-size:10px;">KICK ALL</button>` : ''}
                 </div>
                 <ul style="padding:0; margin:0;">${usersStr}</ul></div>` : ''}
             <script>
                 async function kickUser(id) { await fetch('/typewriter/api/kick', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ target: id }) }); location.reload(); }
+                async function unkickUser(id) { await fetch('/typewriter/api/unkick', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ target: id }) }); location.reload(); }
                 async function banUser(id) { await fetch('/typewriter/api/ban', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ target: id }) }); location.reload(); }
                 async function kickAll() { if(confirm("KICK EVERYONE?")) { await fetch('/typewriter/api/kick-all', { method: 'POST' }); location.reload(); } }
                 async function send() {
@@ -238,7 +249,7 @@ app.get('/typewriter/edit', (req, res) => {
 app.post('/typewriter/api/type', (req, res) => {
     const { message, password } = req.body;
     const userCookie = req.cookies.user_cookie || "Unknown";
-    if (!ADMIN_IDENTITIES.includes(userCookie) && password !== ADMIN_PASSWORD) return res.status(403).send();
+    if (!ADMIN_IDENTITIES.includes(userCookie) && password !== ADMIN_PASSWORD) return res.status(403).send("<h1>FUCK YOU</h1><p>WRONG PASSWORD.</p>");
     state.queue = [...message.split("")];
     state.isPulsing = false; 
     res.json({ success: true });
@@ -246,27 +257,40 @@ app.post('/typewriter/api/type', (req, res) => {
 
 app.post('/typewriter/api/kick', (req, res) => {
     const userCookie = req.cookies.user_cookie || "Unknown";
-    if (!ADMIN_IDENTITIES.includes(userCookie)) return res.status(403).send();
+    if (userCookie !== SUPER_ADMIN) return res.status(403).send("<h1>FUCK YOU</h1><p>NOT AUTHORIZED.</p>");
     const { target } = req.body;
-    if (target) KICKED_COOKIES.push(target);
+    if (target && !KICKED_COOKIES.includes(target)) KICKED_COOKIES.push(target);
+    res.json({ success: true });
+});
+
+app.post('/typewriter/api/unkick', (req, res) => {
+    const userCookie = req.cookies.user_cookie || "Unknown";
+    if (userCookie !== SUPER_ADMIN) return res.status(403).send("<h1>FUCK YOU</h1><p>NOT AUTHORIZED.</p>");
+    const { target } = req.body;
+    if (target) {
+        KICKED_COOKIES = KICKED_COOKIES.filter(id => id !== target);
+    }
     res.json({ success: true });
 });
 
 app.post('/typewriter/api/kick-all', (req, res) => {
     const userCookie = req.cookies.user_cookie || "Unknown";
-    if (!ADMIN_IDENTITIES.includes(userCookie)) return res.status(403).send();
+    if (userCookie !== SUPER_ADMIN) return res.status(403).send("<h1>FUCK YOU</h1><p>NOT AUTHORIZED.</p>");
     Object.keys(state.activeUsers).forEach(id => {
-        if (!ADMIN_IDENTITIES.includes(id)) KICKED_COOKIES.push(id);
+        const userData = state.activeUsers[id];
+        // Don't kick admins or the transmitter
+        if (!ADMIN_IDENTITIES.includes(id) && !TRANSMITTER_IPS.includes(userData.ip) && !KICKED_COOKIES.includes(id)) {
+            KICKED_COOKIES.push(id);
+        }
     });
-    state.activeUsers = {};
     res.json({ success: true });
 });
 
 app.post('/typewriter/api/ban', (req, res) => {
     const userCookie = req.cookies.user_cookie || "Unknown";
-    if (!ADMIN_IDENTITIES.includes(userCookie)) return res.status(403).send();
+    if (userCookie !== SUPER_ADMIN) return res.status(403).send("<h1>FUCK YOU</h1><p>NOT AUTHORIZED.</p>");
     const { target } = req.body;
-    if (target) BANNED_COOKIES.push(target);
+    if (target && !BANNED_COOKIES.includes(target)) BANNED_COOKIES.push(target);
     res.json({ success: true });
 });
 
