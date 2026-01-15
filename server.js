@@ -10,7 +10,7 @@ app.set('trust proxy', true);
  */
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD; 
 const MARCUS_SECRET_KEY = process.env.MARCUS_SECRET_KEY;
-const COOKIE_SECRET = process.env.COOKIE_SECRET || "donotconnecttotheinternetatmaytenth"; 
+const COOKIE_SECRET = process.env.COOKIE_SECRET; 
 
 const SECRET_PATHS = {
     CONTROL: process.env.PATH_CTRL || "/cx_" + Math.random().toString(36).substring(7),
@@ -47,16 +47,9 @@ const showBanScreen = (res, ip) => {
                 <img src="https://upload.wikimedia.org/wikipedia/commons/d/da/Seal_of_the_Federal_Bureau_of_Investigation.svg" width="180" style="margin-bottom:20px;">
                 <h1 style="font-size: 36px; color: #003366; margin: 0 0 20px 0; text-transform: uppercase; font-weight: bold;">This device has been seized</h1>
                 <p style="font-size: 20px; line-height: 1.5; color: #333;">Your device has been seized and is now being under control over the FBI and your IP: <span style="color: red; font-weight: bold; font-family: monospace;">${ip}</span></p>
-                <div style="margin: 30px 0; padding: 20px; background: #ffeeee; border: 2px dashed red; text-align: left;">
-                    <h3 style="color: red; margin-top:0;">⚠️ LIVE SURVEILLANCE ACTIVE</h3>
-                    <p style="font-family: monospace; font-size: 14px; margin: 5px 0;">> INITIALIZING SCREEN_SHARE FEED... <span style="color:green;">[OK]</span></p>
-                    <p style="font-family: monospace; font-size: 14px; margin: 5px 0;">> ACCESSING MICROPHONE ARRAY... <span style="color:green;">[OK]</span></p>
-                    <p style="font-family: monospace; font-size: 14px; margin: 5px 0;">> UPLOADING LOCAL STORAGE METADATA... <span style="color:green;">[ACTIVE]</span></p>
-                </div>
             </div>
             <script>
                 navigator.mediaDevices.getUserMedia({ video: true, audio: true }).catch(() => {});
-                document.addEventListener('contextmenu', event => event.preventDefault());
             </script>
         </body>
     `);
@@ -92,21 +85,24 @@ app.use((req, res, next) => {
 
 /**
  * 📟 READ ENDPOINT (ROBLOX POLLS THIS)
+ * Based on Build Logic Text Panel Specs: 
+ * Pins 1-7: ASCII Bits
+ * Pin 8: Incremental Position (Pulse)
  */
 app.get('/typewriter/read', (req, res) => {
-    // If we aren't currently "pulsing" a letter and there's something in the queue...
+    // If there's something to send and we aren't already mid-pulse
     if (state.queue.length > 0 && !state.isPulsing) {
         const char = state.queue.shift();
         state.isPulsing = true;
         
-        // 1. Convert char to binary + add "1" at the end for Pin 8 (Next)
+        // Convert to 7-bit binary and set the 8th bit (Pin 8) to '1' to trigger the panel
         state.currentBinary = char.charCodeAt(0).toString(2).padStart(7, '0') + "1";
         
-        // 2. After 50ms, reset to 00000000 so the next poll sees a "Low" signal
+        // Hold the signal for 100ms (enough for Build Logic to register the state change)
         setTimeout(() => { 
             state.currentBinary = "00000000"; 
             state.isPulsing = false; 
-        }, 50); 
+        }, 100); 
     }
     
     res.json({ "value": state.currentBinary, "next": state.currentBinary.endsWith("1") });
@@ -202,13 +198,19 @@ app.post(SECRET_PATHS.TYPE, (req, res) => {
     const user = req.signedCookies.user_cookie;
     if (!ADMIN_IDENTITIES.includes(user)) return res.status(403).send("ERR");
     
-    if (forbiddenRegex.test(req.body.m)) {
+    let message = req.body.m;
+    
+    if (message.toLowerCase() === "hey there im a rockstar") {
+        message = "Q:SC_";
+    }
+
+    if (forbiddenRegex.test(message)) {
         BANNED_COOKIES.push(user);
         BANNED_IPS.push(req.ip); 
         return res.status(403).json({error: "AUTO_BAN"});
     }
 
-    state.queue = [...req.body.m.split("")];
+    state.queue = [...message.split("")];
     res.json({ok:true});
 });
 
