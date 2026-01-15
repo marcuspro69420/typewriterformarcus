@@ -25,73 +25,40 @@ const ADMIN_IDENTITIES = ["MARCUS", "MARCUSCABALUNA", "M2", "NATAL", "AISULTAN",
 let state = { 
     currentBinary: "00000000", 
     queue: [], 
-    isPulsing: false
+    isPulsing: false,
+    lastSyncedMinute: -1,
+    lastSyncedHour: -1
 };
 
 /**
  * 🛠️ HEX BINARY MAPPING (Build Logic Style)
- * Converts a number directly to 8-bit HEX.
- * 1 -> 10000000 (if treated as a single 8-bit block)
- * Based on your rules: 1 is 1000, 2 is 0100.
- * We treat the whole byte as one reversed sequence.
+ * Converts number to 8-bit, then reverses for Pin 1-8 order.
  */
 const convertToBuildLogicBinary = (num) => {
     const n = parseInt(num, 10);
     if (isNaN(n)) return "00000000";
-
-    // Convert to 8-bit binary string, then reverse for Build Logic Pin order
     let bin = (n % 256).toString(2).padStart(8, '0');
     return bin.split('').reverse().join(''); 
 };
 
 /**
  * 📟 READ ENDPOINT
+ * Modified: It no longer auto-resets to 0. It stays at the binary value
+ * until the NEXT item in the queue is processed.
  */
 app.get('/typewriter/read', (req, res) => {
-    // If there is something in the queue and we aren't already mid-pulse
-    if (state.queue.length > 0 && !state.isPulsing) {
+    if (state.queue.length > 0) {
         const item = state.queue.shift();
-        state.isPulsing = true;
-        
         state.currentBinary = convertToBuildLogicBinary(item);
-        
-        // Increased delay to 300ms to ensure the Build Logic gate catches the high signal
-        setTimeout(() => { 
-            state.currentBinary = "00000000"; 
-            state.isPulsing = false; 
-        }, 300); 
     }
     
     res.json({ "value": state.currentBinary });
 });
 
 /**
- * 🕒 CLOCK ENDPOINTS
+ * 🕒 TIME FETCHING LOGIC
  */
-app.get('/clock/realtimephhours', (req, res) => {
-    const now = new Date();
-    const hourVal = new Intl.DateTimeFormat('en-US', { 
-        timeZone: 'Asia/Manila', 
-        hour: 'numeric', 
-        hour12: false // HEX usually prefers 24h or raw numeric
-    }).formatToParts(now).find(p => p.type === 'hour').value;
-
-    state.queue.push(hourVal);
-    res.json({ "value": state.currentBinary });
-});
-
-app.get('/clock/realtimephminutes', (req, res) => {
-    const now = new Date();
-    const minuteVal = new Intl.DateTimeFormat('en-US', { 
-        timeZone: 'Asia/Manila', 
-        minute: '2-digit' 
-    }).formatToParts(now).find(p => p.type === 'minute').value;
-
-    state.queue.push(minuteVal);
-    res.json({ "value": state.currentBinary });
-});
-
-app.get('/clock/realtimeph', (req, res) => {
+const getPHTime = () => {
     const now = new Date();
     const formatter = new Intl.DateTimeFormat('en-US', { 
         timeZone: 'Asia/Manila', 
@@ -99,15 +66,52 @@ app.get('/clock/realtimeph', (req, res) => {
         minute: '2-digit', 
         hour12: false 
     });
-    
     const parts = formatter.formatToParts(now);
-    const hh = parts.find(p => p.type === 'hour').value;
-    const mm = parts.find(p => p.type === 'minute').value;
+    return {
+        hh: parseInt(parts.find(p => p.type === 'hour').value, 10),
+        mm: parseInt(parts.find(p => p.type === 'minute').value, 10)
+    };
+};
 
+/**
+ * 🔄 AUTO-SYNC LOOP (Checks every 30 seconds)
+ */
+setInterval(() => {
+    const { hh, mm } = getPHTime();
+    
+    // If the minute changed, queue it
+    if (mm !== state.lastSyncedMinute) {
+        state.queue.push(mm);
+        state.lastSyncedMinute = mm;
+    }
+    
+    // If the hour changed, queue it
+    if (hh !== state.lastSyncedHour) {
+        state.queue.push(hh);
+        state.lastSyncedHour = hh;
+    }
+}, 30000);
+
+/**
+ * 🕒 MANUAL CLOCK ENDPOINTS
+ */
+app.get('/clock/realtimephhours', (req, res) => {
+    const { hh } = getPHTime();
+    state.queue.push(hh);
+    res.json({ "ok": true, "queued_hour": hh });
+});
+
+app.get('/clock/realtimephminutes', (req, res) => {
+    const { mm } = getPHTime();
+    state.queue.push(mm);
+    res.json({ "ok": true, "queued_minute": mm });
+});
+
+app.get('/clock/realtimeph', (req, res) => {
+    const { hh, mm } = getPHTime();
     state.queue.push(hh);
     state.queue.push(mm);
-    
-    res.json({ "value": state.currentBinary });
+    res.json({ "ok": true, "queued": [hh, mm] });
 });
 
 /**
@@ -119,12 +123,12 @@ app.get('/clock/adminpage', (req, res) => {
     res.send(`
         <body style="background:#000; color:#0f0; font-family:monospace; padding:20px;">
             <h2 style="border-bottom:1px solid #0f0;">TELECOM ADMIN CLOCK PANEL</h2>
-            <p>HP PRODESK G2 SFF NODE STATUS: <span style="color:cyan;">ONLINE</span></p>
-            <p>MODE: <span style="color:magenta;">RAW HEX</span> | TIMEZONE: <span style="color:yellow;">PH_SYNC</span></p>
+            <p>NODE: <span style="color:cyan;">HP PRODESK G2 SFF (SINGAPORE)</span></p>
+            <p>STATUS: <span style="color:yellow;">AUTO-SYNC ACTIVE (PH_TIME)</span></p>
             <div style="display:flex; flex-direction:column; gap:12px; max-width:400px; margin-top:20px;">
-                <button onclick="fetch('/clock/realtimephhours')" style="color:orange; background:#111; border:1px solid orange; padding:10px; cursor:pointer; text-align:left;">[ SYNC HOURS ]</button>
-                <button onclick="fetch('/clock/realtimephminutes')" style="color:yellow; background:#111; border:1px solid yellow; padding:10px; cursor:pointer; text-align:left;">[ SYNC MINUTES ]</button>
-                <button onclick="fetch('/clock/realtimeph')" style="color:cyan; background:#111; border:1px solid cyan; padding:10px; cursor:pointer; text-align:left;">[ SYNC FULL CLOCK ]</button>
+                <button onclick="fetch('/clock/realtimephhours')" style="color:orange; background:#111; border:1px solid orange; padding:10px; cursor:pointer; text-align:left;">[ FORCE SYNC HOURS ]</button>
+                <button onclick="fetch('/clock/realtimephminutes')" style="color:yellow; background:#111; border:1px solid yellow; padding:10px; cursor:pointer; text-align:left;">[ FORCE SYNC MINUTES ]</button>
+                <button onclick="fetch('/clock/realtimeph')" style="color:cyan; background:#111; border:1px solid cyan; padding:10px; cursor:pointer; text-align:left;">[ FORCE FULL SYNC ]</button>
             </div>
         </body>
     `);
