@@ -37,19 +37,18 @@ let state = {
 };
 
 /**
- * 🛠️ HEX BINARY MAPPING (Build Logic Style)
- * Converts number to 8-bit, then reverses for Pin 1-8 order.
+ * 🛠️ BINARY MAPPING
+ * Fixed: Removed the .reverse() so the binary matches standard Hex values.
  */
 const convertToBuildLogicBinary = (num) => {
     const n = parseInt(num, 10);
     if (isNaN(n)) return "00000000";
-    let bin = (n % 256).toString(2).padStart(8, '0');
-    return bin.split('').reverse().join(''); 
+    // Standard 8-bit binary (MSB to LSB)
+    return (n % 256).toString(2).padStart(8, '0');
 };
 
 /**
  * 📟 READ ENDPOINT
- * Standard endpoint for the HTTP Transmitter to poll.
  */
 app.get('/typewriter/read', (req, res) => {
     if (state.queue.length > 0) {
@@ -62,54 +61,40 @@ app.get('/typewriter/read', (req, res) => {
 });
 
 /**
- * 🕒 TIME FETCHING LOGIC (PH Timezone)
+ * 🕒 TIME FETCHING LOGIC (PH Timezone - UTC+8)
  */
 const getPHTime = () => {
-    try {
-        const now = new Date();
-        const formatter = new Intl.DateTimeFormat('en-US', { 
-            timeZone: 'Asia/Manila', 
-            hour: 'numeric', 
-            minute: '2-digit', 
-            hour12: false 
-        });
-        const parts = formatter.formatToParts(now);
-        return {
-            hh: parseInt(parts.find(p => p.type === 'hour').value, 10),
-            mm: parseInt(parts.find(p => p.type === 'minute').value, 10)
-        };
-    } catch (e) {
-        return { hh: 0, mm: 0 };
-    }
+    const now = new Date();
+    // Manual UTC+8 offset for Philippines
+    const phTime = new Date(now.getTime() + (8 * 60 * 60 * 1000));
+    
+    return {
+        hh: phTime.getUTCHours(), 
+        mm: phTime.getUTCMinutes()
+    };
 };
 
 /**
- * 🔄 AUTO-SYNC LOOP (Checks every 30 seconds)
- * Automatically updates currentBinary when the minute or hour rolls over.
+ * 🔄 AUTO-SYNC LOOP
  */
 setInterval(() => {
     const { hh, mm } = getPHTime();
     
-    // Auto-update on minute change
+    // Minute sync
     if (mm !== state.lastSyncedMinute) {
-        console.log(`Auto-sync: Minute changed to ${mm}`);
         state.currentBinary = convertToBuildLogicBinary(mm);
         state.lastSyncedMinute = mm;
     }
     
-    // Auto-update on hour change
+    // Hour sync
     if (hh !== state.lastSyncedHour) {
-        console.log(`Auto-sync: Hour changed to ${hh}`);
-        // We queue the hour if the minute is already showing, 
-        // or just update if it's a fresh roll-over.
-        state.queue.push(hh); 
+        state.currentBinary = convertToBuildLogicBinary(hh);
         state.lastSyncedHour = hh;
     }
-}, 30000);
+}, 5000);
 
 /**
  * 🕒 MANUAL CLOCK ENDPOINTS
- * Returns the actual {"value": "..."} format for immediate display testing.
  */
 app.get('/clock/realtimephhours', (req, res) => {
     const { hh } = getPHTime();
@@ -139,14 +124,12 @@ app.get('/clock/adminpage', (req, res) => {
     res.send(`
         <body style="background:#000; color:#0f0; font-family:monospace; padding:20px;">
             <h2 style="border-bottom:1px solid #0f0;">TELECOM ADMIN CLOCK PANEL</h2>
-            <p>NODE: <span style="color:cyan;">HP PRODESK G2 SFF (SINGAPORE)</span></p>
-            <p>STATUS: <span style="color:yellow;">AUTO-SYNC ACTIVE (PH_TIME)</span></p>
+            <p>NODE: <span style="color:cyan;">HP PRODESK G2 SFF</span></p>
+            <p>MADE BY: <span style="color:white;">GEMINI AND MARCUS</span></p>
             <div style="display:flex; flex-direction:column; gap:12px; max-width:400px; margin-top:20px;">
-                <button onclick="fetch('/clock/realtimephhours')" style="color:orange; background:#111; border:1px solid orange; padding:10px; cursor:pointer; text-align:left;">[ FORCE SYNC HOURS ]</button>
-                <button onclick="fetch('/clock/realtimephminutes')" style="color:yellow; background:#111; border:1px solid yellow; padding:10px; cursor:pointer; text-align:left;">[ FORCE SYNC MINUTES ]</button>
-                <button onclick="fetch('/clock/realtimeph')" style="color:cyan; background:#111; border:1px solid cyan; padding:10px; cursor:pointer; text-align:left;">[ FORCE FULL SYNC ]</button>
+                <button onclick="fetch('/clock/realtimephhours')" style="color:orange; background:#111; border:1px solid orange; padding:10px; cursor:pointer; text-align:left;">[ SYNC HOURS (24H) ]</button>
+                <button onclick="fetch('/clock/realtimephminutes')" style="color:yellow; background:#111; border:1px solid yellow; padding:10px; cursor:pointer; text-align:left;">[ SYNC MINUTES ]</button>
             </div>
-            <p style="margin-top:20px; color:#555;">The game will automatically receive updates every minute.</p>
         </body>
     `);
 });
