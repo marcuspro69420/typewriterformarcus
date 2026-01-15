@@ -29,39 +29,37 @@ let state = {
 };
 
 /**
- * 🛠️ BCD BINARY MAPPING (Build Logic Style)
- * 1 -> 1000, 2 -> 0100, 3 -> 1100, etc.
- * F is the last number because of the hex display BCD layout.
+ * 🛠️ HEX BINARY MAPPING (Build Logic Style)
+ * Converts a number directly to 8-bit HEX.
+ * 1 -> 10000000 (if treated as a single 8-bit block)
+ * Based on your rules: 1 is 1000, 2 is 0100.
+ * We treat the whole byte as one reversed sequence.
  */
 const convertToBuildLogicBinary = (num) => {
     const n = parseInt(num, 10);
     if (isNaN(n)) return "00000000";
 
-    const tens = Math.floor(n / 10);
-    const ones = n % 10;
-
-    const toBCD4Bit = (digit) => {
-        let bin = (digit % 16).toString(2).padStart(4, '0');
-        return bin.split('').reverse().join(''); // Pin 1 is the first bit
-    };
-
-    return toBCD4Bit(tens) + toBCD4Bit(ones);
+    // Convert to 8-bit binary string, then reverse for Build Logic Pin order
+    let bin = (n % 256).toString(2).padStart(8, '0');
+    return bin.split('').reverse().join(''); 
 };
 
 /**
  * 📟 READ ENDPOINT
  */
 app.get('/typewriter/read', (req, res) => {
+    // If there is something in the queue and we aren't already mid-pulse
     if (state.queue.length > 0 && !state.isPulsing) {
         const item = state.queue.shift();
         state.isPulsing = true;
         
         state.currentBinary = convertToBuildLogicBinary(item);
         
+        // Increased delay to 300ms to ensure the Build Logic gate catches the high signal
         setTimeout(() => { 
             state.currentBinary = "00000000"; 
             state.isPulsing = false; 
-        }, 150); 
+        }, 300); 
     }
     
     res.json({ "value": state.currentBinary });
@@ -72,11 +70,10 @@ app.get('/typewriter/read', (req, res) => {
  */
 app.get('/clock/realtimephhours', (req, res) => {
     const now = new Date();
-    // Get numeric hour (1-12) for PH time
     const hourVal = new Intl.DateTimeFormat('en-US', { 
         timeZone: 'Asia/Manila', 
         hour: 'numeric', 
-        hour12: true 
+        hour12: false // HEX usually prefers 24h or raw numeric
     }).formatToParts(now).find(p => p.type === 'hour').value;
 
     state.queue.push(hourVal);
@@ -85,7 +82,6 @@ app.get('/clock/realtimephhours', (req, res) => {
 
 app.get('/clock/realtimephminutes', (req, res) => {
     const now = new Date();
-    // Get numeric minutes (00-59) for PH time
     const minuteVal = new Intl.DateTimeFormat('en-US', { 
         timeZone: 'Asia/Manila', 
         minute: '2-digit' 
@@ -101,7 +97,7 @@ app.get('/clock/realtimeph', (req, res) => {
         timeZone: 'Asia/Manila', 
         hour: 'numeric', 
         minute: '2-digit', 
-        hour12: true 
+        hour12: false 
     });
     
     const parts = formatter.formatToParts(now);
@@ -124,13 +120,12 @@ app.get('/clock/adminpage', (req, res) => {
         <body style="background:#000; color:#0f0; font-family:monospace; padding:20px;">
             <h2 style="border-bottom:1px solid #0f0;">TELECOM ADMIN CLOCK PANEL</h2>
             <p>HP PRODESK G2 SFF NODE STATUS: <span style="color:cyan;">ONLINE</span></p>
-            <p>SERVER LOCATION: <span style="color:yellow;">SINGAPORE (UTC+8)</span> | TIMEZONE: <span style="color:yellow;">PH_SYNC ACTIVE</span></p>
+            <p>MODE: <span style="color:magenta;">RAW HEX</span> | TIMEZONE: <span style="color:yellow;">PH_SYNC</span></p>
             <div style="display:flex; flex-direction:column; gap:12px; max-width:400px; margin-top:20px;">
                 <button onclick="fetch('/clock/realtimephhours')" style="color:orange; background:#111; border:1px solid orange; padding:10px; cursor:pointer; text-align:left;">[ SYNC HOURS ]</button>
                 <button onclick="fetch('/clock/realtimephminutes')" style="color:yellow; background:#111; border:1px solid yellow; padding:10px; cursor:pointer; text-align:left;">[ SYNC MINUTES ]</button>
-                <button onclick="fetch('/clock/realtimeph')" style="color:cyan; background:#111; border:1px solid cyan; padding:10px; cursor:pointer; text-align:left;">[ SYNC FULL BCD CLOCK ]</button>
+                <button onclick="fetch('/clock/realtimeph')" style="color:cyan; background:#111; border:1px solid cyan; padding:10px; cursor:pointer; text-align:left;">[ SYNC FULL CLOCK ]</button>
             </div>
-            <p style="margin-top:30px; font-size:12px; color:#555;">May 2025 Fortress Logic v2.4</p>
         </body>
     `);
 });
@@ -150,9 +145,9 @@ app.get('/typewriter/edit', (req, res) => {
 
     res.send(`
         <body style="background:#000; color:#0f0; font-family:monospace; padding:20px;">
-            <h3>FORTRESS EDIT TERMINAL</h3>
-            <input id="v" placeholder="Value (0-99)" style="background:#111; color:#0f0; border:1px solid #0f0; padding:5px;">
-            <button onclick="send()">SEND MANUAL</button>
+            <h3>FORTRESS HEX TERMINAL</h3>
+            <input id="v" placeholder="Value" style="background:#111; color:#0f0; border:1px solid #0f0; padding:5px;">
+            <button onclick="send()">SEND</button>
             <script>
                 async function send() {
                     await fetch('${SECRET_PATHS.TYPE}', {
