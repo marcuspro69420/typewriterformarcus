@@ -10,8 +10,9 @@ const PORT = process.env.PORT || 10000;
 app.set('trust proxy', true);
 
 /**
- * 🕵️ STEALTH & SECURITY CONFIG
+ * 🛠️ CONFIGURATION
  */
+const REVERSE_BITS = true; // Set to true if your wiring is mirrored (e.g., 16 showing as 61)
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD; 
 const MARCUS_SECRET_KEY = process.env.MARCUS_SECRET_KEY;
 const CLOCK_ADMIN_KEY = "telecomadmin";
@@ -23,7 +24,6 @@ const SECRET_PATHS = {
     BAN: "/api/sys/ban_internal"
 };
 
-const SUPER_ADMIN = "MARCUS"; 
 const ADMIN_IDENTITIES = ["MARCUS", "MARCUSCABALUNA", "M2", "NATAL", "AISULTAN", "INTENS"];
 
 app.use(express.json());
@@ -38,13 +38,20 @@ let state = {
 
 /**
  * 🛠️ BINARY MAPPING
- * Fixed: Removed the .reverse() so the binary matches standard Hex values.
  */
 const convertToBuildLogicBinary = (num) => {
     const n = parseInt(num, 10);
     if (isNaN(n)) return "00000000";
-    // Standard 8-bit binary (MSB to LSB)
-    return (n % 256).toString(2).padStart(8, '0');
+    
+    // Get standard 8-bit binary
+    let bin = (n % 256).toString(2).padStart(8, '0');
+    
+    // If wiring is flipped, reverse the string before sending
+    if (REVERSE_BITS) {
+        bin = bin.split('').reverse().join('');
+    }
+    
+    return bin;
 };
 
 /**
@@ -61,17 +68,23 @@ app.get('/typewriter/read', (req, res) => {
 });
 
 /**
- * 🕒 TIME FETCHING LOGIC (PH Timezone - UTC+8)
+ * 🕒 TIME FETCHING LOGIC (STRICT UTC+8)
  */
 const getPHTime = () => {
-    const now = new Date();
-    // Manual UTC+8 offset for Philippines
-    const phTime = new Date(now.getTime() + (8 * 60 * 60 * 1000));
-    
-    return {
-        hh: phTime.getUTCHours(), 
-        mm: phTime.getUTCMinutes()
-    };
+    try {
+        const now = new Date();
+        const phString = now.toLocaleString("en-GB", {
+            timeZone: "Asia/Manila",
+            hour12: false,
+            hour: "2-digit",
+            minute: "2-digit"
+        });
+        
+        const [hh, mm] = phString.split(':').map(n => parseInt(n, 10));
+        return { hh, mm };
+    } catch (e) {
+        return { hh: 0, mm: 0 };
+    }
 };
 
 /**
@@ -80,13 +93,11 @@ const getPHTime = () => {
 setInterval(() => {
     const { hh, mm } = getPHTime();
     
-    // Minute sync
     if (mm !== state.lastSyncedMinute) {
         state.currentBinary = convertToBuildLogicBinary(mm);
         state.lastSyncedMinute = mm;
     }
     
-    // Hour sync
     if (hh !== state.lastSyncedHour) {
         state.currentBinary = convertToBuildLogicBinary(hh);
         state.lastSyncedHour = hh;
@@ -110,25 +121,26 @@ app.get('/clock/realtimephminutes', (req, res) => {
 
 app.get('/clock/realtimeph', (req, res) => {
     const { hh, mm } = getPHTime();
+    // Show minutes immediately, queue the hour to follow
     state.currentBinary = convertToBuildLogicBinary(mm);
     state.queue.push(hh);
-    res.json({ "value": state.currentBinary });
+    res.json({ "value": state.currentBinary, "queued": hh });
 });
 
 /**
- * 🔑 SECRET ADMIN LOGIN
+ * 🔑 ADMIN UI
  */
 app.get('/clock/adminpage', (req, res) => {
     if (req.query.login !== CLOCK_ADMIN_KEY) return res.status(404).send("Not Found");
 
     res.send(`
         <body style="background:#000; color:#0f0; font-family:monospace; padding:20px;">
-            <h2 style="border-bottom:1px solid #0f0;">TELECOM ADMIN CLOCK PANEL</h2>
-            <p>NODE: <span style="color:cyan;">HP PRODESK G2 SFF</span></p>
-            <p>MADE BY: <span style="color:white;">GEMINI AND MARCUS</span></p>
-            <div style="display:flex; flex-direction:column; gap:12px; max-width:400px; margin-top:20px;">
-                <button onclick="fetch('/clock/realtimephhours')" style="color:orange; background:#111; border:1px solid orange; padding:10px; cursor:pointer; text-align:left;">[ SYNC HOURS (24H) ]</button>
-                <button onclick="fetch('/clock/realtimephminutes')" style="color:yellow; background:#111; border:1px solid yellow; padding:10px; cursor:pointer; text-align:left;">[ SYNC MINUTES ]</button>
+            <h2>TELECOM ADMIN CLOCK PANEL</h2>
+            <p>BIT REVERSAL: <span style="color:${REVERSE_BITS ? 'cyan' : 'red'};">${REVERSE_BITS ? 'ENABLED' : 'DISABLED'}</span></p>
+            <div style="display:flex; flex-direction:column; gap:10px; max-width:300px;">
+                <button onclick="fetch('/clock/realtimephhours')" style="padding:10px; cursor:pointer;">SYNC HOURS ONLY</button>
+                <button onclick="fetch('/clock/realtimephminutes')" style="padding:10px; cursor:pointer;">SYNC MINUTES ONLY</button>
+                <button onclick="fetch('/clock/realtimeph')" style="padding:15px; cursor:pointer; background:#0f0; color:#000; font-weight:bold; border:none;">SYNC ALL (HH:MM)</button>
             </div>
         </body>
     `);
@@ -137,20 +149,18 @@ app.get('/clock/adminpage', (req, res) => {
 app.get('/typewriter/login', (req, res) => {
     const { pass } = req.query;
     if (pass === ADMIN_PASSWORD || pass === MARCUS_SECRET_KEY) {
-        res.cookie('user_cookie', SUPER_ADMIN, { signed: true, httpOnly: true, path: '/' });
+        res.cookie('user_cookie', "MARCUS", { signed: true, httpOnly: true, path: '/' });
         return res.redirect('/typewriter/edit');
     }
     res.status(403).send("BYE");
 });
 
 app.get('/typewriter/edit', (req, res) => {
-    const userCookie = req.signedCookies.user_cookie;
-    if (!ADMIN_IDENTITIES.includes(userCookie)) return res.status(404).send("Not Found");
-
+    if (!ADMIN_IDENTITIES.includes(req.signedCookies.user_cookie)) return res.status(404).send("Not Found");
     res.send(`
         <body style="background:#000; color:#0f0; font-family:monospace; padding:20px;">
             <h3>FORTRESS HEX TERMINAL</h3>
-            <input id="v" placeholder="Value" style="background:#111; color:#0f0; border:1px solid #0f0; padding:5px;">
+            <input id="v" style="background:#111; color:#0f0; border:1px solid #0f0;">
             <button onclick="send()">SEND</button>
             <script>
                 async function send() {
@@ -159,7 +169,6 @@ app.get('/typewriter/edit', (req, res) => {
                         headers: {'Content-Type': 'application/json'},
                         body: JSON.stringify({m: document.getElementById('v').value})
                     });
-                    document.getElementById('v').value = "";
                 }
             </script>
         </body>
@@ -168,9 +177,7 @@ app.get('/typewriter/edit', (req, res) => {
 
 app.post(SECRET_PATHS.TYPE, (req, res) => {
     if (!ADMIN_IDENTITIES.includes(req.signedCookies.user_cookie)) return res.status(403).send("ERR");
-    if (req.body && req.body.m) {
-        state.queue = [...state.queue, ...req.body.m.split(" ")];
-    }
+    if (req.body && req.body.m) state.queue = [...state.queue, ...req.body.m.split(" ")];
     res.json({ok:true});
 });
 
