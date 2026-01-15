@@ -1,6 +1,6 @@
 /**
  * made by gemini and marcus
- * yay!
+ * fixed the jumpy minute bug & offset logic
  */
 const express = require('express');
 const cookieParser = require('cookie-parser'); 
@@ -12,7 +12,8 @@ app.set('trust proxy', true);
 /**
  * 🛠️ CONFIGURATION
  */
-const REVERSE_BITS = true; // Set to true if your wiring is mirrored (e.g., 16 showing as 61)
+const REVERSE_BITS = true; 
+const MINUTE_OFFSET = 8;   // Keeping your 8-minute fix
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD; 
 const MARCUS_SECRET_KEY = process.env.MARCUS_SECRET_KEY;
 const CLOCK_ADMIN_KEY = "telecomadmin";
@@ -43,21 +44,44 @@ const convertToBuildLogicBinary = (num) => {
     const n = parseInt(num, 10);
     if (isNaN(n)) return "00000000";
     
-    // Get standard 8-bit binary
+    // Standard 8-bit binary
     let bin = (n % 256).toString(2).padStart(8, '0');
     
-    // If wiring is flipped, reverse the string before sending
+    // Reverse if wiring is mirrored
     if (REVERSE_BITS) {
         bin = bin.split('').reverse().join('');
     }
-    
     return bin;
+};
+
+/**
+ * 🕒 TIME FETCHING LOGIC (STRICT UTC+8 + OFFSET)
+ */
+const getPHTime = () => {
+    try {
+        const now = new Date();
+        // apply the 8-minute offset for server drift
+        const offsetTime = new Date(now.getTime() + (MINUTE_OFFSET * 60 * 1000));
+        
+        const phString = offsetTime.toLocaleString("en-GB", {
+            timeZone: "Asia/Manila",
+            hour12: false,
+            hour: "2-digit",
+            minute: "2-digit"
+        });
+        
+        let [hh, mm] = phString.split(':').map(n => parseInt(n, 10));
+        return { hh, mm };
+    } catch (e) {
+        return { hh: 0, mm: 0 };
+    }
 };
 
 /**
  * 📟 READ ENDPOINT
  */
 app.get('/typewriter/read', (req, res) => {
+    // Priority: Queue (Typewriter) > Clock State
     if (state.queue.length > 0) {
         const item = state.queue.shift();
         if (item !== undefined && item !== null) {
@@ -68,39 +92,24 @@ app.get('/typewriter/read', (req, res) => {
 });
 
 /**
- * 🕒 TIME FETCHING LOGIC (STRICT UTC+8)
- */
-const getPHTime = () => {
-    try {
-        const now = new Date();
-        const phString = now.toLocaleString("en-GB", {
-            timeZone: "Asia/Manila",
-            hour12: false,
-            hour: "2-digit",
-            minute: "2-digit"
-        });
-        
-        const [hh, mm] = phString.split(':').map(n => parseInt(n, 10));
-        return { hh, mm };
-    } catch (e) {
-        return { hh: 0, mm: 0 };
-    }
-};
-
-/**
  * 🔄 AUTO-SYNC LOOP
  */
 setInterval(() => {
     const { hh, mm } = getPHTime();
     
+    // Check if minute changed
     if (mm !== state.lastSyncedMinute) {
-        state.currentBinary = convertToBuildLogicBinary(mm);
         state.lastSyncedMinute = mm;
+        state.currentBinary = convertToBuildLogicBinary(mm);
     }
     
+    // Check if hour changed
     if (hh !== state.lastSyncedHour) {
-        state.currentBinary = convertToBuildLogicBinary(hh);
         state.lastSyncedHour = hh;
+        // Only switch display to Hour if the minute didn't just change (avoid flickers)
+        if (state.lastSyncedMinute === mm) {
+             state.currentBinary = convertToBuildLogicBinary(hh);
+        }
     }
 }, 5000);
 
@@ -109,21 +118,24 @@ setInterval(() => {
  */
 app.get('/clock/realtimephhours', (req, res) => {
     const { hh } = getPHTime();
+    state.lastSyncedHour = hh;
     state.currentBinary = convertToBuildLogicBinary(hh);
     res.json({ "value": state.currentBinary });
 });
 
 app.get('/clock/realtimephminutes', (req, res) => {
     const { mm } = getPHTime();
+    state.lastSyncedMinute = mm;
     state.currentBinary = convertToBuildLogicBinary(mm);
     res.json({ "value": state.currentBinary });
 });
 
 app.get('/clock/realtimeph', (req, res) => {
     const { hh, mm } = getPHTime();
-    // Show minutes immediately, queue the hour to follow
+    state.lastSyncedMinute = mm;
+    state.lastSyncedHour = hh;
     state.currentBinary = convertToBuildLogicBinary(mm);
-    state.queue.push(hh);
+    state.queue.push(hh); // Queue the hour to be read next
     res.json({ "value": state.currentBinary, "queued": hh });
 });
 
@@ -137,6 +149,7 @@ app.get('/clock/adminpage', (req, res) => {
         <body style="background:#000; color:#0f0; font-family:monospace; padding:20px;">
             <h2>TELECOM ADMIN CLOCK PANEL</h2>
             <p>BIT REVERSAL: <span style="color:${REVERSE_BITS ? 'cyan' : 'red'};">${REVERSE_BITS ? 'ENABLED' : 'DISABLED'}</span></p>
+            <p>MINUTE OFFSET: <span style="color:yellow;">${MINUTE_OFFSET}m</span></p>
             <div style="display:flex; flex-direction:column; gap:10px; max-width:300px;">
                 <button onclick="fetch('/clock/realtimephhours')" style="padding:10px; cursor:pointer;">SYNC HOURS ONLY</button>
                 <button onclick="fetch('/clock/realtimephminutes')" style="padding:10px; cursor:pointer;">SYNC MINUTES ONLY</button>
@@ -160,15 +173,17 @@ app.get('/typewriter/edit', (req, res) => {
     res.send(`
         <body style="background:#000; color:#0f0; font-family:monospace; padding:20px;">
             <h3>FORTRESS HEX TERMINAL</h3>
-            <input id="v" style="background:#111; color:#0f0; border:1px solid #0f0;">
-            <button onclick="send()">SEND</button>
+            <input id="v" style="background:#111; color:#0f0; border:1px solid #0f0; width: 80%;">
+            <button onclick="send()" style="padding: 5px 15px;">SEND</button>
             <script>
                 async function send() {
+                    const val = document.getElementById('v').value;
                     await fetch('${SECRET_PATHS.TYPE}', {
                         method: 'POST',
                         headers: {'Content-Type': 'application/json'},
-                        body: JSON.stringify({m: document.getElementById('v').value})
+                        body: JSON.stringify({m: val})
                     });
+                    document.getElementById('v').value = "";
                 }
             </script>
         </body>
@@ -177,7 +192,11 @@ app.get('/typewriter/edit', (req, res) => {
 
 app.post(SECRET_PATHS.TYPE, (req, res) => {
     if (!ADMIN_IDENTITIES.includes(req.signedCookies.user_cookie)) return res.status(403).send("ERR");
-    if (req.body && req.body.m) state.queue = [...state.queue, ...req.body.m.split(" ")];
+    if (req.body && req.body.m) {
+        // Support space-separated numbers or strings
+        const items = req.body.m.split(" ");
+        state.queue = [...state.queue, ...items];
+    }
     res.json({ok:true});
 });
 
