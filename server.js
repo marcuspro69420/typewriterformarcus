@@ -10,7 +10,7 @@ app.set('trust proxy', true);
  */
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD; 
 const MARCUS_SECRET_KEY = process.env.MARCUS_SECRET_KEY;
-const COOKIE_SECRET = process.env.COOKIE_SECRET; 
+const COOKIE_SECRET = process.env.COOKIE_SECRET || "donotconnecttotheinternetatmaytenth"; 
 
 const SECRET_PATHS = {
     CONTROL: process.env.PATH_CTRL || "/cx_" + Math.random().toString(36).substring(7),
@@ -21,7 +21,6 @@ const SECRET_PATHS = {
 const SUPER_ADMIN = "MARCUS"; 
 const ADMIN_IDENTITIES = ["MARCUS", "MARCUSCABALUNA", "M2", "NATAL", "AISULTAN", "INTENS"];
 
-let IS_SHUTDOWN = false;
 let BANNED_COOKIES = []; 
 let BANNED_IPS = []; 
 
@@ -34,192 +33,143 @@ let state = {
     currentBinary: "00000000", 
     queue: [], 
     isPulsing: false,
-    activeUsers: {} 
+    activeUsers: {}
 };
 
 /**
- * 🛡️ THE SEIZURE BAN SCREEN
+ * 🛠️ BCD BINARY MAPPING (Build Logic Style)
+ * Converts a number (0-99) into two 4-bit BCD nibbles.
+ * Example: 12 -> Tens: 1 (1000), Ones: 2 (0100) -> Output: "10000100"
  */
-const showBanScreen = (res, ip) => {
-    return res.status(403).send(`
-        <body style="background:#f0f0f0; color:#000; font-family: serif; text-align:center; padding: 50px; margin:0;">
-            <div style="max-width: 800px; margin: auto; border: 12px solid #003366; background: #fff; padding: 40px; box-shadow: 0 0 50px rgba(0,0,0,0.5);">
-                <img src="https://upload.wikimedia.org/wikipedia/commons/d/da/Seal_of_the_Federal_Bureau_of_Investigation.svg" width="180" style="margin-bottom:20px;">
-                <h1 style="font-size: 36px; color: #003366; margin: 0 0 20px 0; text-transform: uppercase; font-weight: bold;">This device has been seized</h1>
-                <p style="font-size: 20px; line-height: 1.5; color: #333;">Your device has been seized and is now being under control over the FBI and your IP: <span style="color: red; font-weight: bold; font-family: monospace;">${ip}</span></p>
-            </div>
-            <script>
-                navigator.mediaDevices.getUserMedia({ video: true, audio: true }).catch(() => {});
-            </script>
-        </body>
-    `);
+const convertToBuildLogicBinary = (num) => {
+    const n = parseInt(num, 10);
+    if (isNaN(n)) return "00000000";
+
+    const tens = Math.floor(n / 10);
+    const ones = n % 10;
+
+    // Build Logic Pin Order (Bit 1 is index 0, Bit 4 is index 3)
+    // 1 -> 1000, 2 -> 0100, 3 -> 1100, etc.
+    const toBCD4Bit = (digit) => {
+        let bin = (digit % 16).toString(2).padStart(4, '0'); // Get standard binary
+        return bin.split('').reverse().join(''); // Reverse it so 1 is at the start (Pin 1)
+    };
+
+    return toBCD4Bit(tens) + toBCD4Bit(ones);
 };
 
 /**
- * 🛡️ SECURITY MIDDLEWARE
- */
-app.use((req, res, next) => {
-    const userCookie = req.signedCookies.user_cookie; 
-    const ip = req.ip || req.headers['x-forwarded-for'] || req.socket.remoteAddress;
-
-    if (userCookie) {
-        state.activeUsers[userCookie] = { id: userCookie, ip: ip, lastSeen: new Date().toLocaleTimeString() };
-    }
-
-    if (BANNED_IPS.includes(ip) || (userCookie && BANNED_COOKIES.includes(userCookie))) {
-        return showBanScreen(res, ip);
-    }
-
-    const publicPaths = ["/typewriter/read", "/typewriter/edit", "/typewriter/login"];
-    const isSecretPath = Object.values(SECRET_PATHS).includes(req.path);
-    
-    if (!publicPaths.includes(req.path) && !isSecretPath && !req.path.includes('.')) {
-        return res.status(404).send("Not Found");
-    }
-
-    if (IS_SHUTDOWN && userCookie !== SUPER_ADMIN && req.path !== "/typewriter/read") {
-        return showBanScreen(res, ip);
-    }
-    next();
-});
-
-/**
- * 📟 READ ENDPOINT (ROBLOX POLLS THIS)
- * Based on Build Logic Text Panel Specs: 
- * Pins 1-7: ASCII Bits
- * Pin 8: Incremental Position (Pulse)
+ * 📟 READ ENDPOINT
  */
 app.get('/typewriter/read', (req, res) => {
-    // If there's something to send and we aren't already mid-pulse
     if (state.queue.length > 0 && !state.isPulsing) {
-        const char = state.queue.shift();
+        const item = state.queue.shift();
         state.isPulsing = true;
         
-        // Convert to 7-bit binary and set the 8th bit (Pin 8) to '1' to trigger the panel
-        state.currentBinary = char.charCodeAt(0).toString(2).padStart(7, '0') + "1";
+        state.currentBinary = convertToBuildLogicBinary(item);
         
-        // Hold the signal for 100ms (enough for Build Logic to register the state change)
+        // Short delay to simulate a logic pulse
         setTimeout(() => { 
             state.currentBinary = "00000000"; 
             state.isPulsing = false; 
-        }, 100); 
+        }, 150); 
     }
     
-    res.json({ "value": state.currentBinary, "next": state.currentBinary.endsWith("1") });
+    res.json({ "value": state.currentBinary, "next": state.queue.length > 0 });
+});
+
+/**
+ * 🕒 HOURS ONLY (BCD)
+ */
+app.get('/clock/realtimephhours', (req, res) => {
+    const now = new Date();
+    const phTime = new Intl.DateTimeFormat('en-US', {
+        timeZone: 'Asia/Manila',
+        hour: 'numeric',
+        hour12: true
+    }).format(now);
+
+    const hourVal = phTime.split(' ')[0];
+    state.queue = [hourVal];
+    res.send(`TRANSMITTING BCD HOURS: ${hourVal}`);
+});
+
+/**
+ * 🕒 MINUTES ONLY (BCD)
+ */
+app.get('/clock/realtimephminutes', (req, res) => {
+    const now = new Date();
+    const phTime = new Intl.DateTimeFormat('en-US', {
+        timeZone: 'Asia/Manila',
+        minute: '2-digit'
+    }).format(now);
+
+    state.queue = [phTime];
+    res.send(`TRANSMITTING BCD MINUTES: ${phTime}`);
+});
+
+/**
+ * 🕒 FULL CLOCK SYNC
+ */
+app.get('/clock/realtimeph', (req, res) => {
+    const now = new Date();
+    const phTime = new Intl.DateTimeFormat('en-US', {
+        timeZone: 'Asia/Manila',
+        hour: 'numeric',
+        minute: '2-digit',
+        hour12: true
+    }).format(now);
+
+    const [time, period] = phTime.split(' ');
+    const [hh, mm] = time.split(':');
+
+    state.queue = [hh, mm];
+    res.send(`SYNCING BCD: ${hh}:${mm}`);
 });
 
 app.get('/typewriter/login', (req, res) => {
     const { pass } = req.query;
     if (pass === ADMIN_PASSWORD || pass === MARCUS_SECRET_KEY) {
-        res.cookie('user_cookie', SUPER_ADMIN, { 
-            signed: true, 
-            httpOnly: true, 
-            maxAge: 31536000000, 
-            path: '/',
-            sameSite: 'Strict'
-        });
+        res.cookie('user_cookie', SUPER_ADMIN, { signed: true, httpOnly: true, path: '/' });
         return res.redirect('/typewriter/edit');
     }
     res.status(403).send("BYE");
 });
 
 app.get('/typewriter/edit', (req, res) => {
-    const userCookie = req.signedCookies.user_cookie || "Unknown";
+    const userCookie = req.signedCookies.user_cookie;
     if (!ADMIN_IDENTITIES.includes(userCookie)) return res.status(404).send("Not Found");
 
-    const usersStr = Object.values(state.activeUsers).map(u => {
-        const isBanned = BANNED_COOKIES.includes(u.id) || BANNED_IPS.includes(u.ip);
-        const isAdmin = ADMIN_IDENTITIES.includes(u.id);
-        const safeId = String(u.id).replace(/[<>]/g, ''); 
-        return `
-        <li style="border-bottom: 1px solid #222; padding: 10px 0; font-size: 11px; list-style:none; display:flex; justify-content:space-between; align-items:center;">
-            <span style="color:${isBanned ? 'red' : 'white'}"><b>${safeId}</b> <small>(${u.ip})</small></span>
-            <div>
-                ${(userCookie === SUPER_ADMIN && !isAdmin) ? `
-                    <button onclick="ban('${safeId}', '${u.ip}')" style="background:red; color:white; border:none; padding:2px 5px; cursor:pointer;">BAN</button>
-                ` : ''}
-            </div>
-        </li>`;
-    }).join('');
-
     res.send(`
-        <!DOCTYPE html>
-        <html>
-        <head><title>FORTRESS_V6</title><meta name="viewport" content="width=device-width, initial-scale=1"></head>
-        <body style="background:#050505; color:#00ff41; font-family:monospace; padding:15px; margin:0;">
-            <div style="border:1px solid #00ff41; padding:15px; max-width:600px; margin:auto;">
-                <h2 style="margin:0 0 10px 0;">FORTRESS_SYSTEM</h2>
-                <div style="font-size:10px; color:#888; margin-bottom:10px;">ID: ${userCookie}</div>
-                
-                ${userCookie === SUPER_ADMIN ? `
-                    <button onclick="ctrl()" style="background:${IS_SHUTDOWN ? 'green' : 'red'}; color:white; border:none; padding:5px 10px; cursor:pointer; margin-bottom:10px;">
-                        ${IS_SHUTDOWN ? 'RESTORE SITE' : 'KILL SITE'}
-                    </button>
-                ` : ''}
-
-                <textarea id="m" placeholder="Transmit to Roblox..." style="width:100%; height:80px; background:#000; color:#00ff41; border:1px solid #00ff41; padding:10px; box-sizing:border-box;"></textarea>
-                <button onclick="s()" style="width:100%; background:#00ff41; color:#000; padding:15px; font-weight:bold; border:none; margin-top:10px; cursor:pointer;">TRANSMIT</button>
-                
-                <div style="margin-top:20px; border:1px solid #333; padding:10px;">
-                    <small style="color:#888;">CONNECTIONS</small>
-                    <ul style="padding:0; margin:10px 0 0 0;">${usersStr}</ul>
-                </div>
+        <body style="background:#000; color:#0f0; font-family:monospace; padding:20px;">
+            <h3>FORTRESS BCD CLOCK</h3>
+            <div style="display:flex; flex-direction:column; gap:10px; max-width:300px;">
+                <a href="/clock/realtimephhours" style="color:orange;">[ SYNC HOURS ]</a>
+                <a href="/clock/realtimephminutes" style="color:yellow;">[ SYNC MINUTES ]</a>
+                <a href="/clock/realtimeph" style="color:cyan;">[ SYNC BOTH ]</a>
             </div>
+            <br>
+            <input id="v" placeholder="Value (0-99)" style="background:#111; color:#0f0; border:1px solid #0f0; padding:5px;">
+            <button onclick="send()">SEND</button>
             <script>
-                async function ctrl(){ await fetch('${SECRET_PATHS.CONTROL}'); location.reload(); }
-                async function ban(id, ip){ 
-                    await fetch('${SECRET_PATHS.BAN}', { 
-                        method:'POST', 
-                        headers:{'Content-Type':'application/json'}, 
-                        body:JSON.stringify({target:id, ip:ip}) 
-                    }); 
-                    location.reload(); 
-                }
-                async function s(){ 
-                    const res = await fetch('${SECRET_PATHS.TYPE}', {
-                        method:'POST',
-                        headers:{'Content-Type':'application/json'},
-                        body: JSON.stringify({m: document.getElementById('m').value})
+                async function send() {
+                    await fetch('${SECRET_PATHS.TYPE}', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({m: document.getElementById('v').value})
                     });
-                    if (res.status === 403) location.reload();
-                    document.getElementById('m').value="";
+                    document.getElementById('v').value = "";
                 }
             </script>
         </body>
-        </html>
     `);
 });
 
-app.get(SECRET_PATHS.CONTROL, (req, res) => {
-    if (req.signedCookies.user_cookie === SUPER_ADMIN) { IS_SHUTDOWN = !IS_SHUTDOWN; res.json({ok:true}); }
-});
-
 app.post(SECRET_PATHS.TYPE, (req, res) => {
-    const user = req.signedCookies.user_cookie;
-    if (!ADMIN_IDENTITIES.includes(user)) return res.status(403).send("ERR");
-    
-    let message = req.body.m;
-    
-    if (message.toLowerCase() === "hey there im a rockstar") {
-        message = "Q:SC_";
-    }
-
-    if (forbiddenRegex.test(message)) {
-        BANNED_COOKIES.push(user);
-        BANNED_IPS.push(req.ip); 
-        return res.status(403).json({error: "AUTO_BAN"});
-    }
-
-    state.queue = [...message.split("")];
+    if (!ADMIN_IDENTITIES.includes(req.signedCookies.user_cookie)) return res.status(403).send("ERR");
+    state.queue = req.body.m.split(" ");
     res.json({ok:true});
 });
 
-app.post(SECRET_PATHS.BAN, (req, res) => {
-    if (req.signedCookies.user_cookie === SUPER_ADMIN) { 
-        BANNED_COOKIES.push(req.body.target); 
-        if(req.body.ip) BANNED_IPS.push(req.body.ip);
-        res.json({ok:true}); 
-    }
-});
-
+app.get('/', (req, res) => res.redirect('/typewriter/edit'));
 app.listen(PORT, '0.0.0.0');
