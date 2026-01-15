@@ -1,3 +1,7 @@
+/**
+ * made by gemini and marcus
+ * yay!
+ */
 const express = require('express');
 const cookieParser = require('cookie-parser'); 
 const app = express();
@@ -22,10 +26,12 @@ const SECRET_PATHS = {
 const SUPER_ADMIN = "MARCUS"; 
 const ADMIN_IDENTITIES = ["MARCUS", "MARCUSCABALUNA", "M2", "NATAL", "AISULTAN", "INTENS"];
 
+app.use(express.json());
+app.use(cookieParser(COOKIE_SECRET));
+
 let state = { 
     currentBinary: "00000000", 
     queue: [], 
-    isPulsing: false,
     lastSyncedMinute: -1,
     lastSyncedHour: -1
 };
@@ -43,75 +49,85 @@ const convertToBuildLogicBinary = (num) => {
 
 /**
  * 📟 READ ENDPOINT
- * Modified: It no longer auto-resets to 0. It stays at the binary value
- * until the NEXT item in the queue is processed.
+ * Standard endpoint for the HTTP Transmitter to poll.
  */
 app.get('/typewriter/read', (req, res) => {
     if (state.queue.length > 0) {
         const item = state.queue.shift();
-        state.currentBinary = convertToBuildLogicBinary(item);
+        if (item !== undefined && item !== null) {
+            state.currentBinary = convertToBuildLogicBinary(item);
+        }
     }
-    
-    res.json({ "value": state.currentBinary });
+    res.json({ "value": state.currentBinary || "00000000" });
 });
 
 /**
- * 🕒 TIME FETCHING LOGIC
+ * 🕒 TIME FETCHING LOGIC (PH Timezone)
  */
 const getPHTime = () => {
-    const now = new Date();
-    const formatter = new Intl.DateTimeFormat('en-US', { 
-        timeZone: 'Asia/Manila', 
-        hour: 'numeric', 
-        minute: '2-digit', 
-        hour12: false 
-    });
-    const parts = formatter.formatToParts(now);
-    return {
-        hh: parseInt(parts.find(p => p.type === 'hour').value, 10),
-        mm: parseInt(parts.find(p => p.type === 'minute').value, 10)
-    };
+    try {
+        const now = new Date();
+        const formatter = new Intl.DateTimeFormat('en-US', { 
+            timeZone: 'Asia/Manila', 
+            hour: 'numeric', 
+            minute: '2-digit', 
+            hour12: false 
+        });
+        const parts = formatter.formatToParts(now);
+        return {
+            hh: parseInt(parts.find(p => p.type === 'hour').value, 10),
+            mm: parseInt(parts.find(p => p.type === 'minute').value, 10)
+        };
+    } catch (e) {
+        return { hh: 0, mm: 0 };
+    }
 };
 
 /**
  * 🔄 AUTO-SYNC LOOP (Checks every 30 seconds)
+ * Automatically updates currentBinary when the minute or hour rolls over.
  */
 setInterval(() => {
     const { hh, mm } = getPHTime();
     
-    // If the minute changed, queue it
+    // Auto-update on minute change
     if (mm !== state.lastSyncedMinute) {
-        state.queue.push(mm);
+        console.log(`Auto-sync: Minute changed to ${mm}`);
+        state.currentBinary = convertToBuildLogicBinary(mm);
         state.lastSyncedMinute = mm;
     }
     
-    // If the hour changed, queue it
+    // Auto-update on hour change
     if (hh !== state.lastSyncedHour) {
-        state.queue.push(hh);
+        console.log(`Auto-sync: Hour changed to ${hh}`);
+        // We queue the hour if the minute is already showing, 
+        // or just update if it's a fresh roll-over.
+        state.queue.push(hh); 
         state.lastSyncedHour = hh;
     }
 }, 30000);
 
 /**
  * 🕒 MANUAL CLOCK ENDPOINTS
+ * Returns the actual {"value": "..."} format for immediate display testing.
  */
 app.get('/clock/realtimephhours', (req, res) => {
     const { hh } = getPHTime();
-    state.queue.push(hh);
-    res.json({ "ok": true, "queued_hour": hh });
+    state.currentBinary = convertToBuildLogicBinary(hh);
+    res.json({ "value": state.currentBinary });
 });
 
 app.get('/clock/realtimephminutes', (req, res) => {
     const { mm } = getPHTime();
-    state.queue.push(mm);
-    res.json({ "ok": true, "queued_minute": mm });
+    state.currentBinary = convertToBuildLogicBinary(mm);
+    res.json({ "value": state.currentBinary });
 });
 
 app.get('/clock/realtimeph', (req, res) => {
     const { hh, mm } = getPHTime();
+    state.currentBinary = convertToBuildLogicBinary(mm);
     state.queue.push(hh);
-    state.queue.push(mm);
-    res.json({ "ok": true, "queued": [hh, mm] });
+    res.json({ "value": state.currentBinary });
 });
 
 /**
@@ -130,6 +146,7 @@ app.get('/clock/adminpage', (req, res) => {
                 <button onclick="fetch('/clock/realtimephminutes')" style="color:yellow; background:#111; border:1px solid yellow; padding:10px; cursor:pointer; text-align:left;">[ FORCE SYNC MINUTES ]</button>
                 <button onclick="fetch('/clock/realtimeph')" style="color:cyan; background:#111; border:1px solid cyan; padding:10px; cursor:pointer; text-align:left;">[ FORCE FULL SYNC ]</button>
             </div>
+            <p style="margin-top:20px; color:#555;">The game will automatically receive updates every minute.</p>
         </body>
     `);
 });
@@ -168,7 +185,9 @@ app.get('/typewriter/edit', (req, res) => {
 
 app.post(SECRET_PATHS.TYPE, (req, res) => {
     if (!ADMIN_IDENTITIES.includes(req.signedCookies.user_cookie)) return res.status(403).send("ERR");
-    state.queue = [...state.queue, ...req.body.m.split(" ")];
+    if (req.body && req.body.m) {
+        state.queue = [...state.queue, ...req.body.m.split(" ")];
+    }
     res.json({ok:true});
 });
 
