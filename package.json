@@ -1,9 +1,9 @@
 {
-  "name": "gebidi-api",
+  "name": "marcus-typewriter",
   "version": "1.0.0",
   "scripts": { "start": "node server.js" },
   "dependencies": {
     "express": "^4.18.2",
-    "@google/generative-ai": "^0.1.0"
+    "cookie-parser": "^1.4.6"
   }
 }
