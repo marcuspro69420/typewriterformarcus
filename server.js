@@ -72,26 +72,45 @@ app.get('/typewriter/read', (req, res) => {
  */
 app.get('/clock/realtimephhours', (req, res) => {
     const now = new Date();
-    const phTime = new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Manila', hour: 'numeric', hour12: true }).format(now);
-    const hourVal = phTime.split(' ')[0];
+    // Get numeric hour (1-12) for PH time
+    const hourVal = new Intl.DateTimeFormat('en-US', { 
+        timeZone: 'Asia/Manila', 
+        hour: 'numeric', 
+        hour12: true 
+    }).formatToParts(now).find(p => p.type === 'hour').value;
+
     state.queue.push(hourVal);
     res.json({ "value": state.currentBinary });
 });
 
 app.get('/clock/realtimephminutes', (req, res) => {
     const now = new Date();
-    const phTime = new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Manila', minute: '2-digit' }).format(now);
-    state.queue.push(phTime);
+    // Get numeric minutes (00-59) for PH time
+    const minuteVal = new Intl.DateTimeFormat('en-US', { 
+        timeZone: 'Asia/Manila', 
+        minute: '2-digit' 
+    }).formatToParts(now).find(p => p.type === 'minute').value;
+
+    state.queue.push(minuteVal);
     res.json({ "value": state.currentBinary });
 });
 
 app.get('/clock/realtimeph', (req, res) => {
     const now = new Date();
-    const phTime = new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Manila', hour: 'numeric', minute: '2-digit', hour12: true }).format(now);
-    const [time, period] = phTime.split(' ');
-    const [hh, mm] = time.split(':');
+    const formatter = new Intl.DateTimeFormat('en-US', { 
+        timeZone: 'Asia/Manila', 
+        hour: 'numeric', 
+        minute: '2-digit', 
+        hour12: true 
+    });
+    
+    const parts = formatter.formatToParts(now);
+    const hh = parts.find(p => p.type === 'hour').value;
+    const mm = parts.find(p => p.type === 'minute').value;
+
     state.queue.push(hh);
     state.queue.push(mm);
+    
     res.json({ "value": state.currentBinary });
 });
 
@@ -105,9 +124,10 @@ app.get('/clock/adminpage', (req, res) => {
         <body style="background:#000; color:#0f0; font-family:monospace; padding:20px;">
             <h2 style="border-bottom:1px solid #0f0;">TELECOM ADMIN CLOCK PANEL</h2>
             <p>HP PRODESK G2 SFF NODE STATUS: <span style="color:cyan;">ONLINE</span></p>
+            <p>SERVER LOCATION: <span style="color:yellow;">SINGAPORE (UTC+8)</span> | TIMEZONE: <span style="color:yellow;">PH_SYNC ACTIVE</span></p>
             <div style="display:flex; flex-direction:column; gap:12px; max-width:400px; margin-top:20px;">
-                <button onclick="fetch('/clock/realtimephhours')" style="color:orange; background:#111; border:1px solid orange; padding:10px; cursor:pointer; text-align:left;">[ SYNC HOURS (8:XX) ]</button>
-                <button onclick="fetch('/clock/realtimephminutes')" style="color:yellow; background:#111; border:1px solid yellow; padding:10px; cursor:pointer; text-align:left;">[ SYNC MINUTES (XX:31) ]</button>
+                <button onclick="fetch('/clock/realtimephhours')" style="color:orange; background:#111; border:1px solid orange; padding:10px; cursor:pointer; text-align:left;">[ SYNC HOURS ]</button>
+                <button onclick="fetch('/clock/realtimephminutes')" style="color:yellow; background:#111; border:1px solid yellow; padding:10px; cursor:pointer; text-align:left;">[ SYNC MINUTES ]</button>
                 <button onclick="fetch('/clock/realtimeph')" style="color:cyan; background:#111; border:1px solid cyan; padding:10px; cursor:pointer; text-align:left;">[ SYNC FULL BCD CLOCK ]</button>
             </div>
             <p style="margin-top:30px; font-size:12px; color:#555;">May 2025 Fortress Logic v2.4</p>
