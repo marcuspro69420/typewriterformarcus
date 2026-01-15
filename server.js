@@ -10,6 +10,7 @@ app.set('trust proxy', true);
  */
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD; 
 const MARCUS_SECRET_KEY = process.env.MARCUS_SECRET_KEY;
+const CLOCK_ADMIN_KEY = "telecomadmin";
 const COOKIE_SECRET = process.env.COOKIE_SECRET || "donotconnecttotheinternetatmaytenth"; 
 
 const SECRET_PATHS = {
@@ -21,25 +22,16 @@ const SECRET_PATHS = {
 const SUPER_ADMIN = "MARCUS"; 
 const ADMIN_IDENTITIES = ["MARCUS", "MARCUSCABALUNA", "M2", "NATAL", "AISULTAN", "INTENS"];
 
-let BANNED_COOKIES = []; 
-let BANNED_IPS = []; 
-
-const forbiddenRegex = /nigger|nigga|pussy|faggot|kike|slut|EFN|ERN|EPSTEIN/i;
-
-app.use(express.json());
-app.use(cookieParser(COOKIE_SECRET));
-
 let state = { 
     currentBinary: "00000000", 
     queue: [], 
-    isPulsing: false,
-    activeUsers: {}
+    isPulsing: false
 };
 
 /**
  * 🛠️ BCD BINARY MAPPING (Build Logic Style)
- * Converts a number (0-99) into two 4-bit BCD nibbles.
- * Example: 12 -> Tens: 1 (1000), Ones: 2 (0100) -> Output: "10000100"
+ * 1 -> 1000, 2 -> 0100, 3 -> 1100, etc.
+ * F is the last number because of the hex display BCD layout.
  */
 const convertToBuildLogicBinary = (num) => {
     const n = parseInt(num, 10);
@@ -48,11 +40,9 @@ const convertToBuildLogicBinary = (num) => {
     const tens = Math.floor(n / 10);
     const ones = n % 10;
 
-    // Build Logic Pin Order (Bit 1 is index 0, Bit 4 is index 3)
-    // 1 -> 1000, 2 -> 0100, 3 -> 1100, etc.
     const toBCD4Bit = (digit) => {
-        let bin = (digit % 16).toString(2).padStart(4, '0'); // Get standard binary
-        return bin.split('').reverse().join(''); // Reverse it so 1 is at the start (Pin 1)
+        let bin = (digit % 16).toString(2).padStart(4, '0');
+        return bin.split('').reverse().join(''); // Pin 1 is the first bit
     };
 
     return toBCD4Bit(tens) + toBCD4Bit(ones);
@@ -68,63 +58,61 @@ app.get('/typewriter/read', (req, res) => {
         
         state.currentBinary = convertToBuildLogicBinary(item);
         
-        // Short delay to simulate a logic pulse
         setTimeout(() => { 
             state.currentBinary = "00000000"; 
             state.isPulsing = false; 
         }, 150); 
     }
     
-    res.json({ "value": state.currentBinary, "next": state.queue.length > 0 });
+    res.json({ "value": state.currentBinary });
 });
 
 /**
- * 🕒 HOURS ONLY (BCD)
+ * 🕒 CLOCK ENDPOINTS
  */
 app.get('/clock/realtimephhours', (req, res) => {
     const now = new Date();
-    const phTime = new Intl.DateTimeFormat('en-US', {
-        timeZone: 'Asia/Manila',
-        hour: 'numeric',
-        hour12: true
-    }).format(now);
-
+    const phTime = new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Manila', hour: 'numeric', hour12: true }).format(now);
     const hourVal = phTime.split(' ')[0];
-    state.queue = [hourVal];
-    res.send(`TRANSMITTING BCD HOURS: ${hourVal}`);
+    state.queue.push(hourVal);
+    res.json({ "value": state.currentBinary });
 });
 
-/**
- * 🕒 MINUTES ONLY (BCD)
- */
 app.get('/clock/realtimephminutes', (req, res) => {
     const now = new Date();
-    const phTime = new Intl.DateTimeFormat('en-US', {
-        timeZone: 'Asia/Manila',
-        minute: '2-digit'
-    }).format(now);
+    const phTime = new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Manila', minute: '2-digit' }).format(now);
+    state.queue.push(phTime);
+    res.json({ "value": state.currentBinary });
+});
 
-    state.queue = [phTime];
-    res.send(`TRANSMITTING BCD MINUTES: ${phTime}`);
+app.get('/clock/realtimeph', (req, res) => {
+    const now = new Date();
+    const phTime = new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Manila', hour: 'numeric', minute: '2-digit', hour12: true }).format(now);
+    const [time, period] = phTime.split(' ');
+    const [hh, mm] = time.split(':');
+    state.queue.push(hh);
+    state.queue.push(mm);
+    res.json({ "value": state.currentBinary });
 });
 
 /**
- * 🕒 FULL CLOCK SYNC
+ * 🔑 SECRET ADMIN LOGIN
  */
-app.get('/clock/realtimeph', (req, res) => {
-    const now = new Date();
-    const phTime = new Intl.DateTimeFormat('en-US', {
-        timeZone: 'Asia/Manila',
-        hour: 'numeric',
-        minute: '2-digit',
-        hour12: true
-    }).format(now);
+app.get('/clock/adminpage', (req, res) => {
+    if (req.query.login !== CLOCK_ADMIN_KEY) return res.status(404).send("Not Found");
 
-    const [time, period] = phTime.split(' ');
-    const [hh, mm] = time.split(':');
-
-    state.queue = [hh, mm];
-    res.send(`SYNCING BCD: ${hh}:${mm}`);
+    res.send(`
+        <body style="background:#000; color:#0f0; font-family:monospace; padding:20px;">
+            <h2 style="border-bottom:1px solid #0f0;">TELECOM ADMIN CLOCK PANEL</h2>
+            <p>HP PRODESK G2 SFF NODE STATUS: <span style="color:cyan;">ONLINE</span></p>
+            <div style="display:flex; flex-direction:column; gap:12px; max-width:400px; margin-top:20px;">
+                <button onclick="fetch('/clock/realtimephhours')" style="color:orange; background:#111; border:1px solid orange; padding:10px; cursor:pointer; text-align:left;">[ SYNC HOURS (8:XX) ]</button>
+                <button onclick="fetch('/clock/realtimephminutes')" style="color:yellow; background:#111; border:1px solid yellow; padding:10px; cursor:pointer; text-align:left;">[ SYNC MINUTES (XX:31) ]</button>
+                <button onclick="fetch('/clock/realtimeph')" style="color:cyan; background:#111; border:1px solid cyan; padding:10px; cursor:pointer; text-align:left;">[ SYNC FULL BCD CLOCK ]</button>
+            </div>
+            <p style="margin-top:30px; font-size:12px; color:#555;">May 2025 Fortress Logic v2.4</p>
+        </body>
+    `);
 });
 
 app.get('/typewriter/login', (req, res) => {
@@ -142,15 +130,9 @@ app.get('/typewriter/edit', (req, res) => {
 
     res.send(`
         <body style="background:#000; color:#0f0; font-family:monospace; padding:20px;">
-            <h3>FORTRESS BCD CLOCK</h3>
-            <div style="display:flex; flex-direction:column; gap:10px; max-width:300px;">
-                <a href="/clock/realtimephhours" style="color:orange;">[ SYNC HOURS ]</a>
-                <a href="/clock/realtimephminutes" style="color:yellow;">[ SYNC MINUTES ]</a>
-                <a href="/clock/realtimeph" style="color:cyan;">[ SYNC BOTH ]</a>
-            </div>
-            <br>
+            <h3>FORTRESS EDIT TERMINAL</h3>
             <input id="v" placeholder="Value (0-99)" style="background:#111; color:#0f0; border:1px solid #0f0; padding:5px;">
-            <button onclick="send()">SEND</button>
+            <button onclick="send()">SEND MANUAL</button>
             <script>
                 async function send() {
                     await fetch('${SECRET_PATHS.TYPE}', {
@@ -167,7 +149,7 @@ app.get('/typewriter/edit', (req, res) => {
 
 app.post(SECRET_PATHS.TYPE, (req, res) => {
     if (!ADMIN_IDENTITIES.includes(req.signedCookies.user_cookie)) return res.status(403).send("ERR");
-    state.queue = req.body.m.split(" ");
+    state.queue = [...state.queue, ...req.body.m.split(" ")];
     res.json({ok:true});
 });
 
